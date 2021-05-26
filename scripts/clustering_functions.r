@@ -3,6 +3,8 @@ require(sp)
 require(magrittr)
 library(dplyr)
 require(RColorBrewer)
+
+
 group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))
 
 
@@ -21,9 +23,9 @@ selectBestGMM <- function(data, K, n.inits = 3) {
     gmm.list <- rep(list(bquote(), n.inits))
     while (i <= n.inits) {
         set.seed(i)
-        gmm.list[[i]] <- Mclust(data, G = 1:K)  
+        gmm.list[[i]] <- Mclust(data, G = 1:K)
         i <- i + 1
-    } 
+    }
     bics <- numeric(length(gmm.list))
     for (i in 1:length(gmm.list)) {
         bics[i] <- gmm.list[[i]]$bic
@@ -39,7 +41,7 @@ selectBestGMM <- function(data, K, n.inits = 3) {
 }
 
 
-#' @title Clusters' spatial location plot 
+#' @title Clusters' spatial location plot
 #' @description Plots the clusters' spatial location in a map
 #' @param df Data frame containing the burned area data
 #' @param coords Data frame containing the spatial coordinates
@@ -60,14 +62,20 @@ plotClust.gmm <- function(df, coords, clus, naind = c(), ...) {
     df1 <- cbind.data.frame(coords, v)
     coordinates(df1) <- c(1,2)
     gridded(df1) <- TRUE
+    arg.list[["sp.layout"]] <- list("sp.lines", coast.lines)
     arg.list[["obj"]] <- df1
     arg.list[["zcol"]] <- 1
+    arg.list[["ylim"]] <- c(-90,90)
+    arg.list[["Xlim"]] <- c(-180,180)
     do.call("spplot", arg.list) %>% print()
     return(df1@data)
 }
 
 
-#' @title Clusters' centroids plot 
+
+# save(coast.lines, file = "scripts/worldmap.Rdata")
+
+#' @title Clusters' centroids plot
 #' @description Plots the clusters' centroids and the 25 and 75 percentiles
 #' @param df Data frame containing the burned area data without NAs
 #' @param clus A mclust-class model
@@ -90,12 +98,12 @@ plotCentroids.gmm <- function(df, clus, par) {
         plot(per.75, col = 'blue', type = 'l', xlab = "Month", ylab = "Burned Area",
             main = paste('Cluster', toString(i)), sub = paste('Size', toString(sum(clus$classification == i))))
         lines(1:12, centroide, col = "red")
-        lines(1:12, per.25, col = "green")        
+        lines(1:12, per.25, col = "green")
     }
 }
 
 
-#' @title Fire season calculation 
+#' @title Fire season calculation
 #' @description Calculates the fire season of each of the clusters of the mclust model
 #' @param df Data frame containing the no Nas burned area data
 #' @param clus A mclust-class model
@@ -131,10 +139,10 @@ load("ba_dataframe.Rdata")
 
 df.log = log1p(df)
 
-#' @title Fire season calculation of each of the clusters of the biome 
+#' @title Fire season calculation of each of the clusters of the biome
 #' @description Performs the clustering of the points with the biome, plots the spatial location and the centroid for each cluster and calculates the fire season of each cluster
 #' @param biome Number between 1 and 13. Each number corresponds to one particular biome as you can see in the dataframe legend.biomes
-#' @param min.size Minimum size of each the clusters 
+#' @param min.size Minimum size of each the clusters
 #' @return List containing the fire season of each of the clusters
 
 biome.clustering <- function (biome, min.size = 5){
@@ -142,15 +150,15 @@ biome.clustering <- function (biome, min.size = 5){
     ind.coords.biome = which(biomes$BIOME == biome)
     df.log.biome = df.log[ind.coords.biome,]
     coords.biome = coords[ind.coords.biome,]
-    
+
     # Find the NAs points
     naind.biome <- which(is.na(df.log.biome), arr.ind = TRUE)
-    
+
     K = 9
     minsize = 0
-    
+
     print(toString(legend.biomes$Name[biome]))
-    
+
     if (length(naind.biome) == 0){
         # Perform the clustering: clusters' size must be greater than min.size
         while (minsize < min.size){
@@ -175,7 +183,7 @@ biome.clustering <- function (biome, min.size = 5){
 
         # Calculate the fire season for each cluster
         fireSeason.biome = fireSeason(df.log.biome, gmm.biome$gmm[[1]])
-        
+
     } else {
         # Perform the clustering: clusters' size must be greater than min.size
         while (minsize < min.size){
@@ -201,6 +209,6 @@ biome.clustering <- function (biome, min.size = 5){
         # Calculate the fire season for each cluster
         fireSeason.biome = fireSeason(df.log.biome[-naind.biome,], gmm.biome$gmm[[1]])
     }
-        
+
     return (fireSeason.biome)
 }
