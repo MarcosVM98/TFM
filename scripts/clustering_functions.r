@@ -4,6 +4,7 @@ require(magrittr)
 library(dplyr)
 require(RColorBrewer)
 
+load("scripts/worldmap.Rdata")
 
 group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))
 
@@ -15,7 +16,7 @@ group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent
 #' @param data Data frame
 #' @param K maximun number of groups
 #' @param n.inits Number of initializations. Default to 3
-#' @return A mclust-class model
+#' @return A list of mclust-class models and the index of the list of the model with the highest BIC
 #' @importFrom mclust Mclust
 
 selectBestGMM <- function(data, K, n.inits = 3) {
@@ -66,7 +67,7 @@ plotClust.gmm <- function(df, coords, clus, naind = c(), ...) {
     arg.list[["obj"]] <- df1
     arg.list[["zcol"]] <- 1
     arg.list[["ylim"]] <- c(-90,90)
-    arg.list[["Xlim"]] <- c(-180,180)
+    arg.list[["xlim"]] <- c(-180,180)
     do.call("spplot", arg.list) %>% print()
     return(df1@data)
 }
@@ -86,7 +87,8 @@ plotCentroids.gmm <- function(df, clus, par) {
     par(mfrow = par)
 
     for (i in 1:clus$G){
-        centroide = colMeans(df[which(clus$classification == i),])
+        #centroide = colMeans(df[which(clus$classification == i),])
+        centroide = apply(df[which(clus$classification == i),], 2, median)
 
         per.25 = c()
         per.75 = c()
@@ -112,7 +114,8 @@ plotCentroids.gmm <- function(df, clus, par) {
 fireSeason = function(df, clus){
     fire.season = list()
     for (i in 1:clus$G){
-        centroide = colMeans(df[which(clus$classification == i),])
+        #centroide = colMeans(df[which(clus$classification == i),])
+        centroide = apply(df[which(clus$classification == i),], 2, median)
         anual = as.data.frame(centroide)
         anual$mes = 1:12
         anual = arrange(anual, -centroide)
@@ -143,7 +146,7 @@ df.log = log1p(df)
 #' @description Performs the clustering of the points with the biome, plots the spatial location and the centroid for each cluster and calculates the fire season of each cluster
 #' @param biome Number between 1 and 13. Each number corresponds to one particular biome as you can see in the dataframe legend.biomes
 #' @param min.size Minimum size of each the clusters
-#' @return List containing the fire season of each of the clusters
+#' @return List containing the fire season of each of the clusters and the mclust clustering model used for calculating the fire seasons
 
 biome.clustering <- function (biome, min.size = 5){
     # Select the appropiate subset of the data
@@ -163,52 +166,54 @@ biome.clustering <- function (biome, min.size = 5){
         # Perform the clustering: clusters' size must be greater than min.size
         while (minsize < min.size){
             gmm.biome <- selectBestGMM(data = df.log.biome, K, n.inits = 3)
+            ind = gmm.biome$ind
             size = c()
-            for (i in 1:gmm.biome$gmm[[1]]$G){
-                size = c(size, sum(gmm.biome$gmm[[1]]$classification == i))
+            for (i in 1:gmm.biome$gmm[[ind]]$G){
+                size = c(size, sum(gmm.biome$gmm[[ind]]$classification == i))
             }
             minsize = min(size)
             K = K - 1
         }
 
         # Plot the clusters' location
-        gmm.plot.biome <- plotClust.gmm(df.log.biome, coords.biome, gmm.biome$gmm[[1]])
+        gmm.plot.biome <- plotClust.gmm(df.log.biome, coords.biome, gmm.biome$gmm[[ind]])
 
         # Plot the clusters' centroids
-        if (gmm.biome$gmm[[1]]$G < 5) {
-            plotCentroids.gmm(df.log.biome, gmm.biome$gmm[[1]], c(2,2))
+        if (gmm.biome$gmm[[ind]]$G < 5) {
+            plotCentroids.gmm(df.log.biome, gmm.biome$gmm[[ind]], c(2,2))
         } else {
-            plotCentroids.gmm(df.log.biome, gmm.biome$gmm[[1]], c(3,3))
+            plotCentroids.gmm(df.log.biome, gmm.biome$gmm[[ind]], c(3,3))
         }
 
         # Calculate the fire season for each cluster
-        fireSeason.biome = fireSeason(df.log.biome, gmm.biome$gmm[[1]])
+        fireSeason.biome = fireSeason(df.log.biome, gmm.biome$gmm[[ind]])
 
     } else {
         # Perform the clustering: clusters' size must be greater than min.size
         while (minsize < min.size){
             gmm.biome <- selectBestGMM(data = df.log.biome[-naind.biome,], K, n.inits = 3)
+            ind = gmm.biome$ind
             size = c()
-            for (i in 1:gmm.biome$gmm[[1]]$G){
-                size = c(size, sum(gmm.biome$gmm[[1]]$classification == i))
+            for (i in 1:gmm.biome$gmm[[ind]]$G){
+                size = c(size, sum(gmm.biome$gmm[[ind]]$classification == i))
             }
             minsize = min(size)
             K = K - 1
         }
 
         # Plot the clusters' location
-        gmm.plot.biome <- plotClust.gmm(df.log.biome, coords.biome, gmm.biome$gmm[[1]], naind.biome)
+        gmm.plot.biome <- plotClust.gmm(df.log.biome, coords.biome, gmm.biome$gmm[[ind]], naind.biome)
 
         # Plot the clusters' centroids
-        if (gmm.biome$gmm[[1]]$G < 5) {
-            plotCentroids.gmm(df.log.biome[-naind.biome,], gmm.biome$gmm[[1]], c(2,2))
+        if (gmm.biome$gmm[[ind]]$G < 5) {
+            plotCentroids.gmm(df.log.biome[-naind.biome,], gmm.biome$gmm[[ind]], c(2,2))
         } else {
-            plotCentroids.gmm(df.log.biome[-naind.biome,], gmm.biome$gmm[[1]], c(3,3))
+            plotCentroids.gmm(df.log.biome[-naind.biome,], gmm.biome$gmm[[ind]], c(3,3))
         }
 
         # Calculate the fire season for each cluster
-        fireSeason.biome = fireSeason(df.log.biome[-naind.biome,], gmm.biome$gmm[[1]])
+        fireSeason.biome = fireSeason(df.log.biome[-naind.biome,], gmm.biome$gmm[[ind]])
     }
 
-    return (fireSeason.biome)
+    return (list("fs" = fireSeason.biome, "gmm" = gmm.biome$gmm[[ind]]))
 }
