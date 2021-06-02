@@ -117,6 +117,7 @@ fireSeason = function(df, clus){
         #centroide = colMeans(df[which(clus$classification == i),])
         centroide = apply(df[which(clus$classification == i),], 2, median)
         anual = as.data.frame(centroide)
+        #anual$mes = c(12, 1:11)
         anual$mes = 1:12
         anual = arrange(anual, -centroide)
         total = sum(anual$centroide)
