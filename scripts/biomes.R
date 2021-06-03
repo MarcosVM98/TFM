@@ -6,11 +6,13 @@ library(RColorBrewer)
 
 ## 1. SPATIAL OVERLAY ----------------------------------------------------------
 # Load reference BA data
-load("ba_dataframe.Rdata", verbose = TRUE)
+load("ba_mon_clim_masked_df.Rdata", verbose = TRUE)
+str(df_masked)
 # Geo-reference of BA grid
-spoints <- SpatialPoints(coords)
+spoints <- SpatialPoints(masked_coords)
 projection(spoints) <- CRS("+proj=longlat +ellps=WGS84")
 
+# spplot(spoints)
 # Read biome shapefile <https://www.worldwildlife.org/publications/terrestrial-ecoregions-of-the-world>
 a <- readOGR("ignore/official_teow/official/wwf_terr_ecos.shp")
 projection(a) <- CRS("+proj=longlat +ellps=WGS84")
@@ -29,7 +31,7 @@ set.seed(6) # Seed for random color choice
 model.colors <- sample(col_vector, n)
 
 # Plot biome map as SpatialGridDataFrame
-df <- cbind.data.frame(coords, ov)
+df <- cbind.data.frame(masked_coords, ov)
 coordinates(df) <- c(1,2)
 df$BIOME <- as.factor(df$BIOME)
 gridded(df) <- TRUE
@@ -56,9 +58,8 @@ names(legend.biomes) <- c("ID", "Name", "Label")
 
 ## 3. SAVING FINAL DATASET -----------------------------------------------------
 
-# biomes <- cbind.data.frame(coords, "BIOME" = df@data$BIOME)
-# save(legend.biomes, biomes, file = "biome_dataframe.Rdata")
-
+# biomes <- cbind.data.frame(masked_coords, "BIOME" = df@data$BIOME)
+# save(legend.biomes, biomes, file = "biome_dataframe_masked.Rdata")
 
 
 
