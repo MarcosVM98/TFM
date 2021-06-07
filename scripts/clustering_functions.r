@@ -5,6 +5,8 @@ library(dplyr)
 require(RColorBrewer)
 
 load("scripts/worldmap.Rdata")
+load("data/ba_mon_clim_masked_df.Rdata")
+load("data/biome_dataframe_masked.Rdata")
 
 group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))
 
@@ -33,7 +35,7 @@ selectBestGMM <- function(data, K, n.inits = 3) {
     }
     ind = which.max(bics)
     gmm <- gmm.list[[ind]]
-    message("Lowest BIC: ", round(max(bics), 2))
+    message("Highest BIC: ", round(max(bics), 2))
     message("Number of clusters:", gmm$G)
     for (i in 1:n.inits){
         cat(gmm.list[[i]]$G, gmm.list[[i]]$bic, gmm.list[[i]]$icl, '\n')
@@ -117,8 +119,7 @@ fireSeason = function(df, clus){
         #centroide = colMeans(df[which(clus$classification == i),])
         centroide = apply(df[which(clus$classification == i),], 2, median)
         anual = as.data.frame(centroide)
-        #anual$mes = c(12, 1:11)
-        anual$mes = 1:12
+        anual$mes = 1:12#if January is the first month
         anual = arrange(anual, -centroide)
         total = sum(anual$centroide)
         suma = 0
@@ -138,10 +139,9 @@ fireSeason = function(df, clus){
 
 ## Function for performing the clustering and calculating the fire seasons. It uses the four previous functions and the data stored in "biome_dataframe.Rdata" and in "ba_dataframe.Rdata"
 
-load("biome_dataframe.Rdata")
-load("ba_dataframe.Rdata")
 
-df.log = log1p(df)
+
+df.log = log1p(df_masked)
 
 #' @title Fire season calculation of each of the clusters of the biome
 #' @description Performs the clustering of the points with the biome, plots the spatial location and the centroid for each cluster and calculates the fire season of each cluster
@@ -153,27 +153,39 @@ biome.clustering <- function (biome, min.size = 5){
     # Select the appropiate subset of the data
     ind.coords.biome = which(biomes$BIOME == biome)
     df.log.biome = df.log[ind.coords.biome,]
-    coords.biome = coords[ind.coords.biome,]
+    coords.biome = masked_coords[ind.coords.biome,]
 
     # Find the NAs points
     naind.biome <- which(is.na(df.log.biome), arr.ind = TRUE)
 
-    K = 9
+    K = 10 - 5
     minsize = 0
 
     print(toString(legend.biomes$Name[biome]))
 
     if (length(naind.biome) == 0){
-        # Perform the clustering: clusters' size must be greater than min.size
+        # Perform the clustering: clusters' size must be greater than min.size        
+        G = K
+        while (G == K){
+            K = K + 5
+            gmm.biome <- selectBestGMM(data = df.log.biome, K = K, n.inits = 3)
+            ind = gmm.biome$ind
+            G = gmm.biome$gmm[[ind]]$G                
+        }            
+        size = c()
+        for (i in 1:gmm.biome$gmm[[ind]]$G){
+            size = c(size, sum(gmm.biome$gmm[[ind]]$classification == i))
+        }
+        minsize = min(size, na.rm = T)
         while (minsize < min.size){
-            gmm.biome <- selectBestGMM(data = df.log.biome, K, n.inits = 3)
+            K = K - 1
+            gmm.biome <- selectBestGMM(data = df.log.biome, K = K, n.inits = 3)
             ind = gmm.biome$ind
             size = c()
             for (i in 1:gmm.biome$gmm[[ind]]$G){
                 size = c(size, sum(gmm.biome$gmm[[ind]]$classification == i))
             }
-            minsize = min(size)
-            K = K - 1
+            minsize = min(size, na.rm = T)
         }
 
         # Plot the clusters' location
@@ -191,15 +203,27 @@ biome.clustering <- function (biome, min.size = 5){
 
     } else {
         # Perform the clustering: clusters' size must be greater than min.size
+        G = K
+        while (G == K){
+            K = K + 5
+            gmm.biome <- selectBestGMM(data = df.log.biome, K = K, n.inits = 3)
+            ind = gmm.biome$ind
+            G = gmm.biome$gmm[[ind]]$G                
+        }            
+        size = c()
+        for (i in 1:gmm.biome$gmm[[ind]]$G){
+            size = c(size, sum(gmm.biome$gmm[[ind]]$classification == i))
+        }
+        minsize = min(size, na.rm = T)
         while (minsize < min.size){
-            gmm.biome <- selectBestGMM(data = df.log.biome[-naind.biome,], K, n.inits = 3)
+            K = K - 1
+            gmm.biome <- selectBestGMM(data = df.log.biome[-naind.biome,], K = K, n.inits = 3)
             ind = gmm.biome$ind
             size = c()
             for (i in 1:gmm.biome$gmm[[ind]]$G){
                 size = c(size, sum(gmm.biome$gmm[[ind]]$classification == i))
             }
-            minsize = min(size)
-            K = K - 1
+            minsize = min(size, na.rm = T)
         }
 
         # Plot the clusters' location
