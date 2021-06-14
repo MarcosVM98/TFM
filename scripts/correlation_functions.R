@@ -12,7 +12,10 @@ group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent
 # Data required
 load("scripts/worldmap.Rdata", verbose = T)
 load("data/ba_mon_time_series_masked.Rdata", verbose = T)
-load("fireSeasonMedian_def.Rdata", verbose = T)
+#load("fireSeasonMedian_def.Rdata", verbose = T)
+load("fireSeasonPer75_def.Rdata", verbose = T)
+
+fireSeasonMedian_def = fireSeasonPer75_def
 
 
 #' @title Annual correlation calculation
@@ -63,7 +66,11 @@ corr.annual <- function(cpc, name, corr.df, mode = 'unimodal', threshold = 0.4, 
                     l = m[,j]
                     
                     if (sum(l)>0){
-                        corr.vector = c(corr.vector, cor(l,t))
+                        if (cor.test(l, t, method = 'pearson')$p.value < 0.05){
+                            corr.vector = c(corr.vector, cor.test(l, t, method = 'pearson')$estimate)
+                        } else {
+                            corr.vector = c(corr.vector, NA)
+                        }    
                     } else {
                         corr.vector = c(corr.vector, NA)
                     }                
@@ -92,7 +99,11 @@ corr.annual <- function(cpc, name, corr.df, mode = 'unimodal', threshold = 0.4, 
                     }
                     
                     if (sum(l)>0){
-                        corr.vector = c(corr.vector, cor(l,t))
+                        if (cor.test(l, t, method = 'pearson')$p.value < 0.05){
+                            corr.vector = c(corr.vector, cor.test(l, t, method = 'pearson')$estimate)
+                        } else {
+                            corr.vector = c(corr.vector, NA)
+                        }    
                     } else {
                         corr.vector = c(corr.vector, NA)
                     }                
@@ -131,7 +142,11 @@ corr.annual <- function(cpc, name, corr.df, mode = 'unimodal', threshold = 0.4, 
                     }
                     
                     if (sum(l)>0){
-                        corr.vector = c(corr.vector, cor(l,t))
+                        if (cor.test(l, t, method = 'pearson')$p.value < 0.05){
+                            corr.vector = c(corr.vector, cor.test(l, t, method = 'pearson')$estimate)
+                        } else {
+                            corr.vector = c(corr.vector, NA)
+                        }    
                     } else {
                         corr.vector = c(corr.vector, NA)
                     }
@@ -221,7 +236,11 @@ corr.monthly <- function(cpc, name, corr.df.monthly, threshold = 0.4){
                 l = m[,j]
                 
                 if (sum(l)>0){
-                    corr.vector = c(corr.vector, cor(l,t[1:length(ind.meses)]))
+                    if (cor.test(l,t[1:length(ind.meses)], method = 'pearson')$p.value < 0.05){
+                        corr.vector = c(corr.vector, cor.test(l,t[1:length(ind.meses)], method = 'pearson')$estimate)
+                    } else {
+                        corr.vector = c(corr.vector, NA)
+                    }   
                 } else {
                     corr.vector = c(corr.vector, NA)
                 }                

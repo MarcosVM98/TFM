@@ -76,7 +76,6 @@ plotClust.gmm <- function(df, coords, clus, naind = c(), ...) {
 
 
 
-# save(coast.lines, file = "scripts/worldmap.Rdata")
 
 #' @title Clusters' centroids plot
 #' @description Plots the clusters' centroids and the 25 and 75 percentiles
@@ -117,7 +116,7 @@ fireSeason = function(df, clus){
     fire.season = list()
     for (i in 1:clus$G){
         #centroide = colMeans(df[which(clus$classification == i),])
-        centroide = apply(df[which(clus$classification == i),], 2, median)
+        centroide = apply(df[which(clus$classification == i),], 2, quantile, prob = 0.75)
         anual = as.data.frame(centroide)
         anual$mes = 1:12#if January is the first month
         anual = arrange(anual, -centroide)
