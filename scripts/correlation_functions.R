@@ -27,7 +27,7 @@ fireSeasonMedian_def = fireSeasonPer75_def
 #' @param threshold Value used as a threshold for the plots. Only pixels which abs(cor) > threshold are plotted
 #' @param plot Boolean deciding if the plot is shown
 #' @return A copy of corr.df dataframe with a new column with the correlation
-corr.annual <- function(cpc, name, corr.df, mode = 'unimodal', threshold = 0.4, plot = T){    
+corr.annual <- function(cpc, name, corr.df, mode = 'unimodal', threshold = 0, plot = T){    
     
     if (mode == 'unimodal'){
         form = 1
@@ -192,7 +192,7 @@ corr.annual <- function(cpc, name, corr.df, mode = 'unimodal', threshold = 0.4, 
 #' @param corr.df.monthly Dataframe with the same form as masked_coords
 #' @param threshold Value used as a threshold for the plots. Only pixels which abs(cor) > threshold are plotted
 #' @return A copy of corr.df.monthly dataframe with a new column with the correlation
-corr.monthly <- function(cpc, name, corr.df.monthly, threshold = 0.4){
+corr.monthly <- function(cpc, name, corr.df.monthly, threshold = 0){
     corr.df.monthly$ind.cpc = NA
     
     for (biome in 1:13){
