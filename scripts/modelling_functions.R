@@ -5,8 +5,8 @@ library(tidyr)
 library(dplyr)
 require(sp)
 require(magrittr)
-library('caret')
-library('randomForest')
+library(caret)
+library(randomForest)
 
 
 # Data required
@@ -17,6 +17,84 @@ load('corrDfAnnualClus.Rdata', verbose = T)
 
 
 masked_ba_series.log = log1p(masked_ba_series)
+
+
+
+#' @title Burned area time series calculation
+#' @description Obtaining the annual burned area time series as the sum of the burned area during the fire season in each year of all the points in the cluster
+#' @param m Subset of the masked_ba_series.log dataframe containing only the burned area data in the points of the cluster during the months of the fire season
+#' @param meses Vector containing the months of the fire season of that cluster
+#' @param ind.meses Vector containing the positions in the masked_ba_series.log dataframe of the months of the fire seasons during the period 2001-2020
+#' @param ind.coords Vector containing the position of the points of the cluster in masked_coords dataframe
+#' @return vector with the burned area time series
+get.ba.serie <- function(m, meses, ind.meses, ind.coords){    
+        if (length(meses) == 1){
+            ba.serie = m[,1]
+            for (j in 2:length(ind.coords)){                    
+                ba.serie = ba.serie + m[,j]
+            }
+        } else {
+            ba.serie = c()
+            for (i in 1:(length(ind.meses)/length(meses))){
+                ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),1]))
+            }
+            for (j in 2:length(ind.coords)){
+                l = c()
+                for (i in 1:(length(ind.meses)/length(meses))){
+                    l = c(l, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),j]))
+                }
+                ba.serie = ba.serie + l
+            }
+        }        
+    return (ba.serie)
+}
+
+
+#' @title Climate index time series calculation
+#' @description Obtaining the annual climate index time series of the cpcs given. The value of each year is the average of the values of the index during the fire seasons months
+#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
+#' @param ind.coords Vector containing the position of the points of the cluster in masked_coords dataframe
+#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different data frame
+#' @param meses Vector containing the months of the fire season of that cluster
+#' @param ind.meses Vector containing the positions in the masked_ba_series.log array of the months of the fire seasons during the period 2001-2020
+#' @param df dataframe whose new columns will be the climate indexes time series
+#' @return dataframe whose new columns will be the climate indexes time series
+get.cpc.serie <- function(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, df){            
+    # If the fire season takes place in only one year 
+    if (fireSeasons[ind.coords,]$start.1[1] <= fireSeasons[ind.coords,]$end.1[1]){
+        ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
+
+        if (length(meses) == 1){
+            for (i in 1:length(list.cpcs)){
+                cpc.serie = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
+                df = cbind(df, cpc.serie)
+            }                    
+        } else {
+            for (i in 1:length(list.cpcs)){                    
+                n = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
+                cpc.serie = apply(n, 1, mean)
+                df = cbind(df, cpc.serie)
+            }
+        }                
+
+    # If the fire season takes place in two different years
+    } else {                
+        ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
+
+        for (i in 1:length(list.cpcs)){
+            n = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
+            n = as.vector(t(n))
+
+            cpc.serie = c()
+            for (j in 1:(length(ind.meses)/length(meses))){
+                cpc.serie = c(cpc.serie, mean(n[(fireSeasons[ind.coords,]$end.1[1] + 1 + (j-1)*length(meses)):
+                                (fireSeasons[ind.coords,]$end.1[1] + j*length(meses))]))
+            }
+            df = cbind(df, cpc.serie)
+        }
+    }                        
+    return (df)
+}
 
 
 
@@ -45,8 +123,7 @@ lm.clus <- function(fireSeasons, corr.df, list.cpcs, mode = 'unimodal'){
     for (biome in 1:13){
         lm.biome = list()
         clusters = sort(unique(fireSeasons[which(fireSeasons$BIOME == biome),]$cl))
-        n.clusters = length(clusters)
-        for (cl in 1:n.clusters){
+        for (cl in 1:length(clusters)){
                 
             clus = clusters[cl]         
             ind.coords = which(fireSeasons$BIOME == biome & fireSeasons$cl == clus)
@@ -59,14 +136,16 @@ lm.clus <- function(fireSeasons, corr.df, list.cpcs, mode = 'unimodal'){
             }
             
             # Discard the indexes with no significant correlation
-            cpcs = c()
+            cpcs.na = c()
             for (i in 3:dim(corr.df)[2]){
-                if (!is.na(corr.df[ind.coords, i][1])){
-                    cpcs = c(cpcs, i)
+                if (is.na(corr.df[ind.coords, i][1])){
+                    cpcs.na = c(cpcs.na, i)
                 }
             }
+            
+            cpcs.na = cpcs.na - 2
             # If there are no indexes with significant correlation, we move to the next cluster
-            if (length(cpcs) == 0){
+            if (length(cpcs.na) == length(list.cpcs)){
                 lm.biome[[cl]] = NA
                 add = c(biome, cl, 0, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
@@ -79,59 +158,9 @@ lm.clus <- function(fireSeasons, corr.df, list.cpcs, mode = 'unimodal'){
                 ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
                    
                 ind.meses = ind.meses[1:(length(meses) * floor(length(ind.meses)/length(meses)))]
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-                
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                if (length(meses) == 1){
-                    ba.serie = m[,1]
-                    for (j in 2:length(ind.coords)){                    
-                        ba.serie = ba.serie + m[,j]
-                    }
-                } else {
-                    ba.serie = c()
-                    for (i in 1:(length(ind.meses)/length(meses))){
-                        ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),1]))
-                    }
-                    for (j in 2:length(ind.coords)){
-                        l = c()
-                        for (i in 1:(length(ind.meses)/length(meses))){
-                            l = c(l, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),j]))
-                        }
-                        ba.serie = ba.serie + l
-                    }
-                }
-                
-                df = data.frame('ba' = ba.serie)
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                
-                # Obtaining the climate indexes time series
-                if (length(meses) == 1){
-                    for (i in 1:length(cpcs)){
-                        cpc.serie = list.cpcs[[cpcs[i]-2]][which(list.cpcs[[cpcs[i]-2]]$Year %in% ind.years), c(meses + 1)]
-                        df = cbind(df, cpc.serie)
-                    }                    
-                } else {
-                    for (i in 1:length(cpcs)){                    
-                        n = list.cpcs[[cpcs[i]-2]][which(list.cpcs[[cpcs[i]-2]]$Year %in% ind.years), c(meses + 1)]
-                        cpc.serie = apply(n, 1, mean)
-                        df = cbind(df, cpc.serie)
-                    }
-                }
-                colnames(df) = c('ba', cpcs-2)
-                
-                # Training the linear model
-                mod <- train(ba ~ ., data = df, method = "lm", trControl = ctrl)
-                lm.biome[[cl]] <- mod
-                
-                add = c(biome, cl, length(cpcs), mod$results$RMSE, mod$results$Rsquared, mod$results$MAE,
-                       var(mod$pred$pred)/var(mod$pred$obs), quantile(mod$pred$pred, prob = 0.9)/quantile(mod$pred$obs,
-                        prob = 0.9))
-                results = rbind(results, add)
             
             # If the fire season takes place in two different years
-            } else {
-                
+            } else {                
                 meses = c(seq(1, fireSeasons[ind.coords,]$end.1[1]), seq(fireSeasons[ind.coords,]$start.1[1], 12))                
                 ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
                 
@@ -141,55 +170,33 @@ lm.clus <- function(fireSeasons, corr.df, list.cpcs, mode = 'unimodal'){
                     ind.meses = ind.meses[(fireSeasons[ind.coords,]$end.1[1]+1):(length(ind.meses)
                                                                                  -4-(13-fireSeasons[ind.coords,]$start.1[1]))]
                 }
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-                
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                ba.serie = c()
-                for (i in 1:(length(ind.meses)/length(meses))){
-                    ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses)) + 1):(i*length(meses)),1]))
-                }
-                for (j in 2:length(ind.coords)){
-                    l = c()
-                    for (i in 1:(length(ind.meses)/length(meses))){
-                        l = c(l, sum(m[((i-1)*(length(meses)) + 1):(i*length(meses)),j]))
-                    }
-                    ba.serie = ba.serie + l
-                }
-                
-                df = data.frame('ba' = ba.serie)
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                
-                # Obtaining the climate indexes time series
-                for (i in 1:length(cpcs)){
-                    n = list.cpcs[[cpcs[i]-2]][which(list.cpcs[[cpcs[i]-2]]$Year %in% ind.years), c(meses + 1)]
-                    n = as.vector(t(n))
+            }
+            
+            m = masked_ba_series.log[ind.meses, ind.coords]
 
-                    cpc.serie = c()
-                    for (j in 1:(length(ind.meses)/length(meses))){
-                        cpc.serie = c(cpc.serie, mean(n[(fireSeasons[ind.coords,]$end.1[1] + 1 + (j-1)*length(meses)):
-                                        (fireSeasons[ind.coords,]$end.1[1] + j*length(meses))]))
-                    }
-                    df = cbind(df, cpc.serie)
-                }
-                
-                colnames(df) = c('ba', cpcs-2)
-                
-                # Training the linear model
-                mod <- train(ba ~ ., data = df, method = "lm", trControl = ctrl)
-                lm.biome[[cl]] <- mod
-                
-                add = c(biome, cl, length(cpcs), mod$results$RMSE, mod$results$Rsquared, mod$results$MAE,
-                       var(mod$pred$pred)/var(mod$pred$obs), quantile(mod$pred$pred, prob = 0.9)/quantile(mod$pred$obs,
-                        prob = 0.9))
-                results = rbind(results, add)
-            }                        
+            # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
+            ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)                
+            df = data.frame('ba' = ba.serie)
+
+            # Obtaining the climate indexes time series
+            df <- get.cpc.serie(fireSeasons, ind.coords, list.cpcs[-cpcs.na], meses, ind.meses, df)
+            colnames(df) = c('ba', (1:length(list.cpcs))[-cpcs.na])
+
+            # Training the linear model
+            mod <- train(ba ~ ., data = df, method = "lm", trControl = ctrl)
+            lm.biome[[cl]] <- mod
+
+            # Obtaining the quality
+            add = c(biome, cl, length(list.cpcs)-length(cpcs.na), mod$results$RMSE, mod$results$Rsquared, mod$results$MAE,
+                   var(mod$pred$pred)/var(mod$pred$obs), quantile(mod$pred$pred, prob = 0.9)/quantile(mod$pred$obs,
+                    prob = 0.9))
+            results = rbind(results, add)
+                                    
         }
         lm[[biome]] = lm.biome
     }
     return (list(lm = lm, results = results[-1,]))
 }
-
 
 
 
@@ -213,13 +220,12 @@ rf.clus <- function(fireSeasons, list.cpcs, mode = 'unimodal'){
     rf = list()# To store the model's information
     results = data.frame(biome = 0, cluster = 0, mtry = 0, ntree = 0, RMSE = 0, R2 = 0, MAE = 0, RVar = 0, Rp90 = 0)# To store the quality information
     ctrl <- trainControl(method = "LOOCV")# Leave-one-out CV
-    tunegrid <- expand.grid(.mtry=c(1:length(list.cpcs)))# Grid for optimizing the number of predictors
+    tunegrid <- expand.grid(.mtry=ceiling(length(list.cpcs)/3))# Grid for optimizing the number of predictors
     
     for (biome in 1:13){
         rf.biome = list()
         clusters = sort(unique(fireSeasons[which(fireSeasons$BIOME == biome),]$cl))
-        n.clusters = length(clusters)
-        for (cl in 1:n.clusters){
+        for (cl in 1:length(clusters)){
                 
             clus = clusters[cl]         
             ind.coords = which(fireSeasons$BIOME == biome & fireSeasons$cl == clus)
@@ -238,74 +244,6 @@ rf.clus <- function(fireSeasons, list.cpcs, mode = 'unimodal'){
                    
                 ind.meses = ind.meses[1:(length(meses) * floor(length(ind.meses)/length(meses)))]
                 
-                m = masked_ba_series.log[ind.meses, ind.coords]
-                
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                if (length(meses) == 1){
-                    ba.serie = m[,1]
-                    for (j in 2:length(ind.coords)){                    
-                        ba.serie = ba.serie + m[,j]
-                    }
-                } else {
-                    ba.serie = c()
-                    for (i in 1:(length(ind.meses)/length(meses))){
-                        ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),1]))
-                    }
-                    for (j in 2:length(ind.coords)){
-                        l = c()
-                        for (i in 1:(length(ind.meses)/length(meses))){
-                            l = c(l, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),j]))
-                        }
-                        ba.serie = ba.serie + l
-                    }
-                }
-                
-                df = data.frame('ba' = ba.serie)
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                
-                # Obtaining climate indexes time series
-                if (length(meses) == 1){
-                    for (i in 1:length(list.cpcs)){
-                        cpc.serie = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
-                        df = cbind(df, cpc.serie)
-                    }                    
-                } else {
-                    for (i in 1:length(list.cpcs)){                    
-                        n = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
-                        cpc.serie = apply(n, 1, mean)
-                        df = cbind(df, cpc.serie)
-                    }
-                }
-                colnames(df) = c('ba', 1:length(list.cpcs))
-                
-                # Training the first model
-                model.def = fit <- train(ba~.,
-                   data = df,
-                   method = 'rf',
-                   tuneGrid = tunegrid,
-                   trControl = ctrl,
-                   ntree = 250)
-
-                # Training new models with different ntree parameters and storing the best one
-                for (ntree in c(500,1000,1500,2000,2500,3000)){
-                  fit <- train(ba~.,
-                               data = df,
-                               method = 'rf',
-                               tuneGrid = tunegrid,
-                               trControl = ctrl,
-                               ntree = ntree)
-                  if (fit$results$RMSE[as.numeric(fit$bestTune)] < model.def$results$RMSE[as.numeric(model.def$bestTune)]){
-                      model.def = fit
-                  }
-                }
-                ind = as.numeric(model.def$bestTune)
-                rv = var(model.def$pred[which(model.def$pred$mtry == ind),]$pred) / var(model.def$pred[which(model.def$pred$mtry == ind),]$obs)# var ratio
-                rp90 = quantile(model.def$pred[which(model.def$pred$mtry == ind),]$pred, prob = 0.9) / quantile(model.def$pred[which(model.def$pred$mtry == ind),]$obs, prob = 0.9)# p90 ratio
-                add = c(biome, cl, model.def$results$mtry[ind], model.def$finalModel$ntree, model.def$results$RMSE[ind],
-                        model.def$results$Rsquared[ind], model.def$results$MAE[ind], rv, rp90)
-                results = rbind(results, add)
-                rf.biome[[cl]] = model.def
-            
             # If the fire season takes place in two different years
             } else {
                 
@@ -318,69 +256,47 @@ rf.clus <- function(fireSeasons, list.cpcs, mode = 'unimodal'){
                     ind.meses = ind.meses[(fireSeasons[ind.coords,]$end.1[1]+1):(length(ind.meses)
                                                                                  -4-(13-fireSeasons[ind.coords,]$start.1[1]))]
                 }
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-                
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                ba.serie = c()
-                for (i in 1:(length(ind.meses)/length(meses))){
-                    ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses)) + 1):(i*length(meses)),1]))
-                }
-                for (j in 2:length(ind.coords)){
-                    l = c()
-                    for (i in 1:(length(ind.meses)/length(meses))){
-                        l = c(l, sum(m[((i-1)*(length(meses)) + 1):(i*length(meses)),j]))
-                    }
-                    ba.serie = ba.serie + l
-                }
-                
-                df = data.frame('ba' = ba.serie)
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                
-                # Obtaining climate indexes time series
-                for (i in 1:length(list.cpcs)){
-                    n = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
-                    n = as.vector(t(n))
+            }
 
-                    cpc.serie = c()
-                    for (j in 1:(length(ind.meses)/length(meses))){
-                        cpc.serie = c(cpc.serie, mean(n[(fireSeasons[ind.coords,]$end.1[1] + 1 + (j-1)*length(meses)):
-                                        (fireSeasons[ind.coords,]$end.1[1] + j*length(meses))]))
-                    }
-                    df = cbind(df, cpc.serie)
-                }
-                
-                colnames(df) = c('ba', 1:length(list.cpcs))
-                
-                # Training the first model
-                model.def = fit <- train(ba~.,
-                   data = df,
-                   method = 'rf',
-                   tuneGrid = tunegrid,
-                   trControl = ctrl,
-                   ntree = 250)
+            m = masked_ba_series.log[ind.meses, ind.coords]
 
-                # Training new models with different ntree parameters and storing the best one
-                for (ntree in c(500,1000,1500,2000,2500,3000)){
+            # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
+            ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)
+            df = data.frame('ba' = ba.serie)
 
-                  fit <- train(ba~.,
-                               data = df,
-                               method = 'rf',
-                               tuneGrid = tunegrid,
-                               trControl = ctrl,
-                               ntree = ntree)
-                  if (fit$results$RMSE[as.numeric(fit$bestTune)] < model.def$results$RMSE[as.numeric(model.def$bestTune)]){
-                      model.def = fit
-                  }
-                }
-                ind = as.numeric(model.def$bestTune)
-                rp90 = quantile(model.def$pred[which(model.def$pred$mtry == ind),]$pred, prob = 0.9) / quantile(model.def$pred[which(model.def$pred$mtry == ind),]$obs, prob = 0.9)# p90 ratio
-                rv = var(model.def$pred[which(model.def$pred$mtry == ind),]$pred) / var(model.def$pred[which(model.def$pred$mtry == ind),]$obs)# var ratio
-                add = c(biome, cl, model.def$results$mtry[ind], model.def$finalModel$ntree, model.def$results$RMSE[ind],
-                        model.def$results$Rsquared[ind], model.def$results$MAE[ind], rv, rp90)
-                results = rbind(results, add)
-                rf.biome[[cl]] = model.def
-            }                        
+            # Obtaining climate indexes time series
+            df <- get.cpc.serie(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, df)                
+            colnames(df) = c('ba', 1:length(list.cpcs))
+
+            # Training the first model
+            model.def = fit <- train(ba~.,
+               data = df,
+               method = 'rf',
+               tuneGrid = tunegrid,
+               trControl = ctrl,
+               ntree = 10)
+
+            # Training new models with different ntree parameters and storing the best one
+            for (ntree in seq(20, 200, 20)){
+
+              fit <- train(ba~.,
+                           data = df,
+                           method = 'rf',
+                           tuneGrid = tunegrid,
+                           trControl = ctrl,
+                           ntree = ntree)
+              if (fit$results$RMSE < model.def$results$RMSE){
+                  model.def = fit
+              }
+            }
+
+            # Obtaining the quality
+            rp90 = quantile(model.def$pred$pred, prob = 0.9) / quantile(model.def$pred$obs, prob = 0.9)# p90 ratio
+            rv = var(model.def$pred$pred) / var(model.def$pred$obs)# var ratio
+            add = c(biome, cl, model.def$results$mtry, model.def$finalModel$ntree, model.def$results$RMSE,
+                    model.def$results$Rsquared, model.def$results$MAE, rv, rp90)
+            results = rbind(results, add)
+            rf.biome[[cl]] = model.def                                    
         }
         rf[[biome]] = rf.biome
     }
