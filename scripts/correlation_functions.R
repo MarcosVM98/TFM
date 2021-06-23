@@ -5,7 +5,7 @@ library(tidyr)
 library(dplyr)
 require(sp)
 require(magrittr)
-require(RColorBrewer)#display.brewer.all()#brewer.pal(n=11, "Spectral")
+require(RColorBrewer)
 
 #group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))
 group.colors <- brewer.pal(11, 'Spectral')
@@ -13,178 +13,12 @@ group.colors <- brewer.pal(11, 'Spectral')
 # Data required
 load("scripts/worldmap.Rdata", verbose = T)
 load("data/ba_mon_time_series_masked.Rdata", verbose = T)
-#load("fireSeasonMedian_def.Rdata", verbose = T)
 load("fireSeasonPer75_def.Rdata", verbose = T)
 
 masked_ba_series.log = log1p(masked_ba_series)
 fireSeasonMedian_def = fireSeasonPer75_def
 
 
-#' @title Annual correlation calculation
-#' @description Obtains the correlation between the sum of the burned area of the fire season's months and the average of the indexes in these months for each pixel. Stores it in a dataframe and plots the results.
-#' @param cpc Data frame containing the value of the cpc climate index per month. First column must be the year and the other ones have to be the months.
-#' @param name Name of the climate index
-#' @param corr.df Dataframe with the same form as masked_coords
-#' @param mode Type of fire season whose correlation are we going to calculate. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons)
-#' @param threshold Value used as a threshold for the plots. Only pixels which abs(cor) > threshold are plotted
-#' @param plot Boolean deciding if the plot is shown
-#' @return A copy of corr.df dataframe with a new column with the correlation
-corr.annual <- function(cpc, name, corr.df, mode = 'unimodal'){    
-    
-    if (mode == 'unimodal'){
-        form = 1
-    } else if (mode == 'bimodal1'){
-        form = 2
-    } else if (mode == 'bimodal2'){
-        form = 2
-        fireSeasonMedian_def[which(fireSeasonMedian_def$form == form),]$start.1 = fireSeasonMedian_def[which(fireSeasonMedian_def$form == form),]$start.2
-        fireSeasonMedian_def[which(fireSeasonMedian_def$form == form),]$end.1 = fireSeasonMedian_def[which(fireSeasonMedian_def$form == form),]$end.2
-    }
-    
-    corr.df$ind.cpc = NA
-    
-    for (biome in 1:13){
-        clusters = sort(unique(fireSeasonMedian_def[which(fireSeasonMedian_def$form == form 
-                                                     & fireSeasonMedian_def$BIOME == biome),]$cl))
-        n.clusters = length(clusters)
-        for (cl in 1:n.clusters){
-            clus = clusters[cl]         
-            ind.coords = which(fireSeasonMedian_def$form == form & fireSeasonMedian_def$BIOME == biome & fireSeasonMedian_def$cl == clus)
-            if (fireSeasonMedian_def[ind.coords,]$start.1[1] == fireSeasonMedian_def[ind.coords,]$end.1[1] & length(ind.coords) > 0){
-                meses = fireSeasonMedian_def[ind.coords,]$start.1[1]
-                ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
-                
-                if (meses > 4){
-                    ind.meses = ind.meses[-length(meses)]
-                }            
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-                
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                t = cpc[which(cpc$Year %in% ind.years), c(meses + 1)]
-
-                corr.vector = c()
-                for (j in 1:length(ind.coords)){                    
-                    l = m[,j]
-                    
-                    if (sum(l)>0){
-                        if (cor.test(l, t, method = 'pearson')$p.value < 0.05){
-                            corr.vector = c(corr.vector, cor.test(l, t, method = 'pearson')$estimate)
-                        } else {
-                            corr.vector = c(corr.vector, NA)
-                        }    
-                    } else {
-                        corr.vector = c(corr.vector, NA)
-                    }                
-                }
-                corr.df[ind.coords,]$ind.cpc = corr.vector
-
-            } else if (fireSeasonMedian_def[ind.coords,]$start.1[1] < fireSeasonMedian_def[ind.coords,]$end.1[1] & length(ind.coords) > 0){
-                meses = seq(fireSeasonMedian_def[ind.coords,]$start.1[1], fireSeasonMedian_def[ind.coords,]$end.1[1])
-                ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
-                    
-                ind.meses = ind.meses[1:(length(meses) * floor(length(ind.meses)/length(meses)))]
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-
-                # cpc
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                n = cpc[which(cpc$Year %in% ind.years), c(meses + 1)]
-                t = apply(n, 1, mean)
-                
-
-                corr.vector = c()
-                for (j in 1:length(ind.coords)){
-                    l = c()
-                    for (i in 1:(length(ind.meses)/length(meses))){
-                        l = c(l, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),j]))
-                    }
-                    
-                    if (sum(l)>0){
-                        if (cor.test(l, t, method = 'pearson')$p.value < 0.05){
-                            corr.vector = c(corr.vector, cor.test(l, t, method = 'pearson')$estimate)
-                        } else {
-                            corr.vector = c(corr.vector, NA)
-                        }    
-                    } else {
-                        corr.vector = c(corr.vector, NA)
-                    }                
-                }
-                corr.df[ind.coords,]$ind.cpc = corr.vector
-
-            } else if (length(ind.coords) > 0) {
-                meses = c(seq(1, fireSeasonMedian_def[ind.coords,]$end.1[1]), seq(fireSeasonMedian_def[ind.coords,]$start.1[1], 12))
-                
-                ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
-                
-                if (fireSeasonMedian_def[ind.coords,]$end.1[1] <= 4){
-                    ind.meses = ind.meses[(fireSeasonMedian_def[ind.coords,]$end.1[1]+1):(length(ind.meses))]
-                } else {
-                    ind.meses = ind.meses[(fireSeasonMedian_def[ind.coords,]$end.1[1]+1):(length(ind.meses)-4
-                                                                                          -(13-fireSeasonMedian_def[ind.coords,]$start.1[1]))]
-                }
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-
-                ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                n = cpc[which(cpc$Year %in% ind.years), c(meses + 1)]
-                
-                n = as.vector(t(n))
-                t = c()
-                for (i in 1:(length(ind.meses)/length(meses))){
-                    t = c(t, mean(n[(fireSeasonMedian_def[ind.coords,]$end.1[1] + 1 + (i-1)*length(meses)):
-                                    (fireSeasonMedian_def[ind.coords,]$end.1[1] + i*length(meses))]))
-                }
-
-                corr.vector = c()
-                for (j in 1:length(ind.coords)){
-                    l = c()
-                    for (i in 1:(length(ind.meses)/length(meses))){
-                        l = c(l, sum(m[((i-1)*(length(meses)) + 1):(i*length(meses)),j]))
-                    }
-                    
-                    if (sum(l)>0){
-                        if (cor.test(l, t, method = 'pearson')$p.value < 0.05){
-                            corr.vector = c(corr.vector, cor.test(l, t, method = 'pearson')$estimate)
-                        } else {
-                            corr.vector = c(corr.vector, NA)
-                        }    
-                    } else {
-                        corr.vector = c(corr.vector, NA)
-                    }
-                }
-                corr.df[ind.coords,]$ind.cpc = corr.vector
-            }
-        }
-    }
-
-    # Plot results
-    arg.list <- list(col.regions = group.colors[11:1][-6],
-                      at = seq(-1, 1, 0.2), main = paste(name, mode, " correlation"))
-    v <- corr.df$ind.cpc
-    #v[is.na(v)] <- NA
-
-    df1 <- cbind.data.frame(masked_coords, v)
-    coordinates(df1) <- c(1,2)
-    gridded(df1) <- TRUE
-    arg.list[["sp.layout"]] <- list("sp.lines", coast.lines)
-    arg.list[["obj"]] <- df1
-    arg.list[["zcol"]] <- 1
-    arg.list[["ylim"]] <- c(-90,90)
-    arg.list[["xlim"]] <- c(-180,180)
-    do.call("spplot", arg.list) %>% print()
-    
-
-    if (mode == 'bimodal2'){
-        colnames(corr.df)[colnames(corr.df) == 'ind.cpc'] = paste(name, '.2', sep = '')
-    } else if (mode == 'bimodal1'){
-        colnames(corr.df)[colnames(corr.df) == 'ind.cpc'] = paste(name, '.1', sep = '')
-    } else {
-        colnames(corr.df)[colnames(corr.df) == 'ind.cpc'] = name
-    }
-    
-    return (corr.df)
-}
 
 
 #' @title Monthly correlation calculation
@@ -391,49 +225,13 @@ corr.annual.clus <- function(cpc, name, corr.df, mode = 'unimodal'){
                 
                 if (meses > 4){
                     ind.meses = ind.meses[-length(meses)]
-                }            
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-                
-                #ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
-                #cpc.serie = cpc[which(cpc$Year %in% ind.years), c(meses + 1)]
-                
-
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)
-                
-                # Obtaining climate indexes time series
-                cpc.serie <- get.cpc.serie(fireSeasonMedian_def, ind.coords, list(cpc), meses, ind.meses, df = data.frame(ba.serie))
-                
-                if (cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$p.value < 0.05){
-                    corr = cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$estimate
-                } else {
-                    corr = NA
-                }    
-                                    
-                corr.df[ind.coords,]$ind.cpc = corr
+                }           
 
             } else if (fireSeasonMedian_def[ind.coords,]$start.1[1] < fireSeasonMedian_def[ind.coords,]$end.1[1]){
                 meses = seq(fireSeasonMedian_def[ind.coords,]$start.1[1], fireSeasonMedian_def[ind.coords,]$end.1[1])
                 ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
                     
                 ind.meses = ind.meses[1:(length(meses) * floor(length(ind.meses)/length(meses)))]
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]
-
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)
-                
-                # Obtaining climate indexes time series
-                cpc.serie <- get.cpc.serie(fireSeasonMedian_def, ind.coords, list(cpc), meses, ind.meses, df = as.data.frame(ba.serie))
-                
-                if (cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$p.value < 0.05){
-                    corr = cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$estimate
-                } else {
-                    corr = NA
-                }        
-                                                    
-                corr.df[ind.coords,]$ind.cpc = corr
 
             } else {
                 meses = c(seq(1, fireSeasonMedian_def[ind.coords,]$end.1[1]), seq(fireSeasonMedian_def[ind.coords,]$start.1[1], 12))
@@ -443,26 +241,25 @@ corr.annual.clus <- function(cpc, name, corr.df, mode = 'unimodal'){
                 if (fireSeasonMedian_def[ind.coords,]$end.1[1] <= 4){
                     ind.meses = ind.meses[(fireSeasonMedian_def[ind.coords,]$end.1[1]+1):(length(ind.meses))]
                 } else {
-                    ind.meses = ind.meses[(fireSeasonMedian_def[ind.coords,]$end.1[1]+1):(length(ind.meses)-4
-                                                                                          -(13-fireSeasonMedian_def[ind.coords,]$start.1[1]))]
+                    ind.meses = ind.meses[(fireSeasonMedian_def[ind.coords,]$end.1[1]+1):(length(ind.meses)-4-(13-fireSeasonMedian_def[ind.coords,]$start.1[1]))]
                 }
-                
-                m = masked_ba_series.log[ind.meses, ind.coords]                
-
-                # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
-                ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)   
-                
-                # Obtaining climate indexes time series
-                cpc.serie <- get.cpc.serie(fireSeasonMedian_def, ind.coords, list(cpc), meses, ind.meses, df = as.data.frame(ba.serie))
-                    
-                if (cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$p.value < 0.05){
-                    corr = cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$estimate
-                } else {
-                    corr = NA
-                }                        
-                
-                corr.df[ind.coords,]$ind.cpc = corr
             }
+                
+            m = masked_ba_series.log[ind.meses, ind.coords]                
+
+            # Obtaining burned area time series as the sum of the burned area during the fire season of all the points in the cluster
+            ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)   
+
+            # Obtaining climate indexes time series
+            cpc.serie <- get.cpc.serie(fireSeasonMedian_def, ind.coords, list(cpc), meses, ind.meses, df = as.data.frame(ba.serie))
+
+            if (cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$p.value < 0.05){
+                corr = cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')$estimate
+            } else {
+                corr = NA
+            }                        
+
+            corr.df[ind.coords,]$ind.cpc = corr
         }
     }
 
