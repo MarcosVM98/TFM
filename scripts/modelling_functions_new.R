@@ -212,14 +212,14 @@ model.validation <- function(obs, pred, as.df = F){
     pred_ter[which(pred >= t1)] <- 2
     pred_ter[which(pred >= t2)] <- 3
     
+    acc.total = sum(pred_ter == obs_ter) / length(obs_ter)
     acc = c()
-    acc = sum(pred_ter == obs_ter) / length(obs_ter)
-    #for (i in 1:3){
-     #   acc[i] = sum(pred_ter[which(obs_ter == i)] == i) / sum(obs_ter == i)
-    #}
+    for (i in 1:3){
+        acc[i] = sum(pred_ter[which(obs_ter == i)] == i) / sum(obs_ter == i)
+    }
     
     if (as.df == T){
-        results = data.frame(RMSE = RMSE, bias = bias, RVar = RVar, cor.pvalue = cor$p.value, cor = cor$estimate, acc = acc)
+        results = data.frame(RMSE = RMSE, bias = bias, RVar = RVar, cor.pvalue = cor$p.value, cor = cor$estimate, acc = acc.total, acc.t1 = acc[1], acc.t2 = acc[2], acc.t3 = acc[3])
     } else {
         results = c(RMSE, bias, RVar, cor$p.value, cor$estimate, acc)
     }
@@ -344,7 +344,7 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
     }
     
     lm = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, lm.Npred = 0, lm.RMSE = 0, lm.bias = 0, lm.RVar = 0, lm.cor.pvalue = 0, lm.cor = 0, lm.acc = 0)# To store the quality
+    results = data.frame(biome = 0, cluster = 0, lm.Npred = 0, lm.RMSE = 0, lm.bias = 0, lm.RVar = 0, lm.cor.pvalue = 0, lm.cor = 0, lm.acc = 0, lm.acc.t1 = 0, lm.acc.t2 = 0, lm.acc.t3 = 0)# To store the quality
     
     for (biome in 1:13){
         lm.biome = list()
@@ -357,7 +357,7 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
                 lm.biome[[cl]] = NA
-                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
@@ -366,7 +366,7 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
             
             if (r$ind == -1){
                 lm.biome[[cl]] = NA
-                add = c(biome, cl, 0, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, 0, NA, NA, NA, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
@@ -526,7 +526,7 @@ rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
     }
     
     rf = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, rf.Ntree = 0, rf.RMSE = 0, rf.bias = 0, rf.RVar = 0, rf.cor.pvalue = 0, rf.cor = 0, rf.acc = 0)# To store the quality
+    results = data.frame(biome = 0, cluster = 0, rf.Ntree = 0, rf.RMSE = 0, rf.bias = 0, rf.RVar = 0, rf.cor.pvalue = 0, rf.cor = 0, rf.acc = 0, rf.acc.t1 = 0, rf.acc.t2 = 0, rf.acc.t3 = 0)# To store the quality
     
     for (biome in 1:13){
         rf.biome = list()
@@ -539,7 +539,7 @@ rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
                 rf.biome[[cl]] = NA
-                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
@@ -626,7 +626,7 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
     }
     
     knn = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, knn.RMSE = 0, knn.bias = 0, knn.RVar = 0, knn.cor.pvalue = 0, knn.cor = 0, knn.acc = 0)# To store the quality
+    results = data.frame(biome = 0, cluster = 0, knn.RMSE = 0, knn.bias = 0, knn.RVar = 0, knn.cor.pvalue = 0, knn.cor = 0, knn.acc = 0, knn.acc.t1 = 0, knn.acc.t2 = 0, knn.acc.t3 = 0)# To store the quality
     
     for (biome in 1:13){
         knn.biome = list()
@@ -639,7 +639,7 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
                 knn.biome[[cl]] = NA
-                add = c(biome, cl, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
