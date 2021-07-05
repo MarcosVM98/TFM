@@ -28,24 +28,24 @@ masked_ba_series.log = log1p(masked_ba_series)
 #' @param ind.coords Vector containing the position of the points of the cluster in masked_coords dataframe
 #' @return vector with the burned area time series
 get.ba.serie <- function(m, meses, ind.meses, ind.coords){    
-        if (length(meses) == 1){
-            ba.serie = m[,1]
-            for (j in 2:length(ind.coords)){                    
-                ba.serie = ba.serie + m[,j]
-            }
-        } else {
-            ba.serie = c()
+    if (length(meses) == 1){
+        ba.serie = m[,1]
+        for (j in 2:length(ind.coords)){                    
+            ba.serie = ba.serie + m[,j]
+        }
+    } else {
+        ba.serie = c()
+        for (i in 1:(length(ind.meses)/length(meses))){
+            ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),1]))
+        }
+        for (j in 2:length(ind.coords)){
+            l = c()
             for (i in 1:(length(ind.meses)/length(meses))){
-                ba.serie = c(ba.serie, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),1]))
+                l = c(l, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),j]))
             }
-            for (j in 2:length(ind.coords)){
-                l = c()
-                for (i in 1:(length(ind.meses)/length(meses))){
-                    l = c(l, sum(m[((i-1)*(length(meses))+1):(i*length(meses)),j]))
-                }
-                ba.serie = ba.serie + l
-            }
-        }        
+            ba.serie = ba.serie + l
+        }
+    }        
     return (ba.serie)
 }
 
@@ -105,27 +105,12 @@ get.cpc.serie <- function(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, 
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different data frame
 #' @param mode Type of fire season that we consider. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons). Clusters with different type of fire season will not have a model.
 #' @return A list containing another list with all the linear models and a dataframe with information about the quality of each model.
-lm.clus <- function(fireSeasons, corr.df, list.cpcs, mode = 'unimodal'){
-    if (mode == 'unimodal'){
-        form = 1
-    } else if (mode == 'bimodal1'){
-        form = 2
-    } else if (mode == 'bimodal2'){
-        form = 2
-        fireSeasons[which(fireSeasons$form == form),]$start.1 = fireSeasons[which(fireSeasons$form == form),]$start.2
-        fireSeasons[which(fireSeasons$form == form),]$end.1 = fireSeasons[which(fireSeasons$form == form),]$end.2
-    }
+lm.clus <- function(fireSeasons, corr.df, list.cpcs, biome, cluster, mode = 'unimodal'){
     
-    lm = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, Npred = 0, RMSE = 0, R2 = 0, MAE = 0, RVar = 0, Rp90 = 0)# To store the quality
     ctrl <- trainControl(method = "LOOCV")# leave-one-out CV
+    par(mfrow=c(3,3))##
 
-    for (biome in 1:13){
-        lm.biome = list()
-        clusters = sort(unique(fireSeasons[which(fireSeasons$BIOME == biome),]$cl))
-        for (cl in 1:length(clusters)){
-                
-            clus = clusters[cl]         
+            
             ind.coords = which(fireSeasons$BIOME == biome & fireSeasons$cl == clus)
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
@@ -180,8 +165,11 @@ lm.clus <- function(fireSeasons, corr.df, list.cpcs, mode = 'unimodal'){
 
             # Obtaining the climate indexes time series
             df <- get.cpc.serie(fireSeasons, ind.coords, list.cpcs[-cpcs.na], meses, ind.meses, df)
-            colnames(df) = c('ba', (1:length(list.cpcs))[-cpcs.na])
+            colnames(df) = c('ba', (1:length(list.cpcs[-cpcs.na])))
 
+#            if (length(list.cpcs[-cpcs.na]) == 1){
+#                plot(df[,-1], df$ba, main = paste('Biome', toString(biome), 'cluster', toString(cl)))
+#            }
             # Training the linear model
             mod <- train(ba ~ ., data = df, method = "lm", trControl = ctrl)
             lm.biome[[cl]] <- mod
