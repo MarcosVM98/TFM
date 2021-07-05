@@ -205,20 +205,23 @@ model.validation <- function(obs, pred, as.df = F){
     obs_ter[which(obs >= t1)] <- 2
     obs_ter[which(obs >= t2)] <- 3
 
+    t1 = quantile(pred, prob = 1/3)
+    t2 = quantile(pred, prob = 2/3)
     pred_ter = pred
     pred_ter[which(pred < t1)] <- 1
     pred_ter[which(pred >= t1)] <- 2
     pred_ter[which(pred >= t2)] <- 3
     
     acc = c()
-    for (i in 1:3){
-        acc[i] = sum(pred_ter[which(obs_ter == i)] == i) / sum(obs_ter == i)
-    }
+    acc = sum(pred_ter == obs_ter) / length(obs_ter)
+    #for (i in 1:3){
+     #   acc[i] = sum(pred_ter[which(obs_ter == i)] == i) / sum(obs_ter == i)
+    #}
     
     if (as.df == T){
-        results = data.frame(RMSE = RMSE, bias = bias, RVar = RVar, cor.pvalue = cor$p.value, cor = cor$estimate, acc.t1 = acc[1], acc.t2 = acc[2], acc.t3 = acc[3])
+        results = data.frame(RMSE = RMSE, bias = bias, RVar = RVar, cor.pvalue = cor$p.value, cor = cor$estimate, acc = acc)
     } else {
-        results = c(RMSE, bias, RVar, cor$p.value, cor$estimate, acc[1], acc[2], acc[3])
+        results = c(RMSE, bias, RVar, cor$p.value, cor$estimate, acc)
     }
     
     return (results)    
@@ -341,7 +344,7 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
     }
     
     lm = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, lm.Npred = 0, lm.RMSE = 0, lm.bias = 0, lm.RVar = 0, lm.cor.pvalue = 0, lm.cor = 0, lm.acc.t1 = 0, lm.acc.t2 = 0, lm.acc.t3 = 0)# To store the quality
+    results = data.frame(biome = 0, cluster = 0, lm.Npred = 0, lm.RMSE = 0, lm.bias = 0, lm.RVar = 0, lm.cor.pvalue = 0, lm.cor = 0, lm.acc = 0)# To store the quality
     
     for (biome in 1:13){
         lm.biome = list()
@@ -354,7 +357,7 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
                 lm.biome[[cl]] = NA
-                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
@@ -363,7 +366,7 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
             
             if (r$ind == -1){
                 lm.biome[[cl]] = NA
-                add = c(biome, cl, 0, NA, NA, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, 0, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
@@ -380,6 +383,66 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
         lm[[biome]] = lm.biome
     }
     return (list(lm = lm, results = results[-1,]))
+}
+
+
+
+#' @title Random forest model obtention and validation for a particular cluster
+#' @description Obtaining the random forest model and evaluating the results
+#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
+#' @param ba.series Dataframe containing the monthly burned area time series for each point
+#' @param dates Array containing the dates of each burned area observation
+#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
+#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
+#' @param biome Number between 1 and 13 representing a biome
+#' @param cluster Number of the cluster whose burned area time series are we going to obtain
+#' @param pvalue Threshold for considering significant each correlation
+#' @param t persistence index. Default to 0
+#' @return list containing the random forest model previously calculated, the results of the validation of the model and a index indicating how many trees are in the model
+rf.obtention.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0){
+    # Obtaining the time series
+    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t)
+    df = data$df        
+    
+    
+    # Training the random forest model
+    ctrl <- trainControl(method = "LOOCV")# Leave-one-out CV
+    tunegrid <- expand.grid(.mtry=ceiling(length(list.cpcs)/3))# Grid for optimizing the number of predictors
+    set.seed(23)
+    
+    # Training the first model
+    ntree.def = 10
+    model.def <- train(ba~.,
+       data = df,
+       method = 'rf',
+       tuneGrid = tunegrid,
+       trControl = ctrl,
+       ntree = 25)
+    
+    results = cbind(data.frame(ntree = 25), model.validation(model.def$pred$obs, model.def$pred$pred, as.df = T))
+
+    # Training new models with different ntree parameters and storing the best one
+    for (ntree in seq(50, 200, 25)){
+
+        fit <- train(ba~.,
+                   data = df,
+                   method = 'rf',
+                   tuneGrid = tunegrid,
+                   trControl = ctrl,
+                   ntree = ntree)
+        
+        add = cbind(data.frame(ntree = ntree), model.validation(fit$pred$obs, fit$pred$pred, as.df = T))                    
+        results = rbind(results, add)
+    }
+    
+    par(mfrow=c(2,2))
+    plot(results$ntree, results$RMSE, main = 'RMSE')
+    #plot(results$ntree, results$bias, main = 'bias')
+    plot(results$ntree, results$RVar, main = 'RVar')
+    plot(results$ntree, results$cor.pvalue, main = 'cor p-value')
+    plot(results$ntree, results$acc, main = 'acc')
+    
+    return (results)
 }
 
 
@@ -463,7 +526,7 @@ rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
     }
     
     rf = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, rf.Ntree = 0, rf.RMSE = 0, rf.bias = 0, rf.RVar = 0, rf.cor.pvalue = 0, rf.cor = 0, rf.acc.t1 = 0, rf.acc.t2 = 0, rf.acc.t3 = 0)# To store the quality
+    results = data.frame(biome = 0, cluster = 0, rf.Ntree = 0, rf.RMSE = 0, rf.bias = 0, rf.RVar = 0, rf.cor.pvalue = 0, rf.cor = 0, rf.acc = 0)# To store the quality
     
     for (biome in 1:13){
         rf.biome = list()
@@ -476,7 +539,7 @@ rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
                 rf.biome[[cl]] = NA
-                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
@@ -563,7 +626,7 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
     }
     
     knn = list()# To store the models
-    results = data.frame(biome = 0, cluster = 0, knn.RMSE = 0, knn.bias = 0, knn.RVar = 0, knn.cor.pvalue = 0, knn.cor = 0, knn.acc.t1 = 0, knn.acc.t2 = 0, knn.acc.t3 = 0)# To store the quality
+    results = data.frame(biome = 0, cluster = 0, knn.RMSE = 0, knn.bias = 0, knn.RVar = 0, knn.cor.pvalue = 0, knn.cor = 0, knn.acc = 0)# To store the quality
     
     for (biome in 1:13){
         knn.biome = list()
@@ -576,7 +639,7 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
             # If the cluster has a different form, we move to the next cluster
             if (fireSeasons[ind.coords,]$form[1] != form){
                 knn.biome[[cl]] = NA
-                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA)
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA)
                 results = rbind(results, add)
                 next
             }
