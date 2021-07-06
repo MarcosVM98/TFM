@@ -12,8 +12,6 @@ group.colors <- brewer.pal(11, 'Spectral')
 
 # Data required
 load("scripts/worldmap.Rdata", verbose = T)
-load("data/ba_mon_time_series_masked.Rdata", verbose = T)
-load("fireSeasonPer75_def.Rdata", verbose = T)
 
 
 
@@ -56,11 +54,40 @@ get.ba.serie <- function(m, meses, ind.meses, ind.coords){
 #' @param meses Vector containing the months of the fire season of that cluster
 #' @param ind.meses Vector containing the positions in the masked_ba_series.log array of the months of the fire seasons during the period 2001-2020
 #' @param df dataframe whose new columns will be the climate indexes time series
+#' @param t persistence index. Default to 0
 #' @return dataframe whose new columns will be the climate indexes time series
-get.cpc.serie <- function(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, df){            
+get.cpc.serie <- function(fireSeasons, dates, ind.coords, list.cpcs, meses, ind.meses, df, t = 0){
+    
+    if (t > 0){# persistence
+        ind.meses = ind.meses - t# update the indexes
+        meses = (meses - t) %% 12# update the months whose climate index time are we going to obtain
+        meses[which(meses == 0)] = 12
+        if (ind.meses[1] < 1){# if ind.meses has non-positive values, we need data for the year which is before the first one of dates array
+            ind.years = as.numeric(substr(dates[ind.meses[which(ind.meses > 0)]], 1, 4))
+            ind.years = c(min(ind.years)-1, ind.years)
+        } else {
+            ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
+        }
+        
+        # Recalculate the months of beginning and end of the fire season
+        if (1 %in% meses & 12 %in% meses){
+            dif = diff(sort(meses))
+            k = 1
+            while (dif[k] == 1 & k < length(dif)){
+                k = k + 1
+            }
+            fireSeasons[ind.coords,]$start.1[1] = sort(meses)[k+1]
+            fireSeasons[ind.coords,]$end.1[1] = sort(meses)[k]
+        } else {
+            fireSeasons[ind.coords,]$start.1[1] = min(meses)
+            fireSeasons[ind.coords,]$end.1[1] = max(meses)
+        }
+    } else {        
+        ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
+    }
+                                                    
     # If the fire season takes place in only one year 
     if (fireSeasons[ind.coords,]$start.1[1] <= fireSeasons[ind.coords,]$end.1[1]){
-        ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
 
         if (length(meses) == 1){
             for (i in 1:length(list.cpcs)){
@@ -76,8 +103,7 @@ get.cpc.serie <- function(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, 
         }                
 
     # If the fire season takes place in two different years
-    } else {                
-        ind.years = as.numeric(substr(dates[ind.meses], 1, 4))
+    } else {
 
         for (i in 1:length(list.cpcs)){
             n = list.cpcs[[i]][which(list.cpcs[[i]]$Year %in% ind.years), c(meses + 1)]
@@ -88,7 +114,6 @@ get.cpc.serie <- function(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, 
                 cpc.serie = c(cpc.serie, mean(n[(fireSeasons[ind.coords,]$end.1[1] + 1 + (j-1)*length(meses)):
                                 (fireSeasons[ind.coords,]$end.1[1] + j*length(meses))]))
             }
-            
             df = cbind(df, cpc.serie)
         }
     }                        
@@ -99,14 +124,18 @@ get.cpc.serie <- function(fireSeasons, ind.coords, list.cpcs, meses, ind.meses, 
 
 #' @title Annual correlation per cluster calculation
 #' @description Obtains the correlation between the sum of the burned area of the fire season's months of each pixel of the cluster and the average of the indexes in these months for each cluster. Stores it in a dataframe and plots the results.
+#' @param ba.series Dataframe containing the monthly burned area time series for each point
+#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
+#' @param coords Array containing the x and y coordinates of each point of the ba.series dataframe
+#' @param dates Array containing the dates of each burned area observation
 #' @param cpc Data frame containing the value of the cpc climate index per month. First column must be the year and the other ones have to be the months.
 #' @param name Name of the climate index
-#' @param corr.df Dataframe with the same form as masked_coords
+#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
 #' @param mode Type of fire season whose correlation are we going to calculate. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons)
-#' @param threshold Value used as a threshold for the plots. Only pixels which abs(cor) > threshold are plotted
-#' @param plot Boolean deciding if the plot is shown
+#' @param pvalue Threshold for considering significant each correlation
+#' @param t persistence index. Default to 0
 #' @return A copy of corr.df dataframe with a new column with the correlation
-corr.annual.clus <- function(ba.series, fireSeasons, cpc, name, corr.df, mode = 'unimodal', pvalue = 0.05, coords = masked_coords){    
+corr.annual.clus <- function(ba.series, fireSeasons, coords, dates, cpc, name, corr.df, mode = 'unimodal', pvalue = 0.05, t = 0, useDeltas = F){    
     
     if (mode == 'unimodal'){
         form = 1
@@ -163,9 +192,13 @@ corr.annual.clus <- function(ba.series, fireSeasons, cpc, name, corr.df, mode = 
             ba.serie <- get.ba.serie(m, meses, ind.meses, ind.coords)   
 
             # Obtaining climate indexes time series
-            cpc.serie <- get.cpc.serie(fireSeasons, ind.coords, list(cpc), meses, ind.meses, df = as.data.frame(ba.serie))
+            cpc.serie <- get.cpc.serie(fireSeasons, dates, ind.coords, list(cpc), meses, ind.meses, df = as.data.frame(ba.serie), t)
             
-            test = cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')
+            if (useDeltas == F){
+                test = cor.test(ba.serie, cpc.serie[,-1], method = 'pearson')
+            } else {
+                test = cor.test(diff(ba.serie), diff(cpc.serie[,-1]), method = 'pearson')
+            }
             corr.pvalue = test$p.value
             corr = test$estimate
                                     
