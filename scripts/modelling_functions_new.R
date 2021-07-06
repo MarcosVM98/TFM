@@ -176,7 +176,22 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
         cpcs.all = c(cpcs.all, cpcs)
         j = j + 1
     }
-    colnames(df) = c('ba', (1:((t+1)*length(list.cpcs))))
+    
+    if (is.null(names(list.cpcs))){
+        colnames(df) = c('ba', (1:((t+1)*length(list.cpcs))))# con esto funcionaba
+    } else {
+        if (t == 0){
+            colnames(df) = c('ba', names(list.cpcs))
+        } else {
+            names = c('ba')
+            for (i in 0:t){
+                for (j in 1:length(list.cpcs)){
+                    names = c(names, paste(names(list.cpcs)[j], '.', toString(i), sep = ''))
+                }
+            }
+            colnames(df) = names
+        }
+    }
             
     return (list(df = df, cpcs = cpcs.all))
 }
@@ -221,7 +236,7 @@ model.validation <- function(obs, pred, as.df = F){
     if (as.df == T){
         results = data.frame(RMSE = RMSE, bias = bias, RVar = RVar, cor.pvalue = cor$p.value, cor = cor$estimate, acc = acc.total, acc.t1 = acc[1], acc.t2 = acc[2], acc.t3 = acc[3])
     } else {
-        results = c(RMSE, bias, RVar, cor$p.value, cor$estimate, acc)
+        results = c(RMSE, bias, RVar, cor$p.value, cor$estimate, acc.total, acc[1], acc[2], acc[3])
     }
     
     return (results)    
@@ -658,4 +673,104 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
         knn[[biome]] = knn.biome
     }
     return (list(knn = knn, results = results[-1,]))
+}
+
+
+
+
+
+#' @title Regression tree model obtention and validation for a particular cluster
+#' @description Obtaining the regression tree model and evaluating the results
+#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
+#' @param ba.series Dataframe containing the monthly burned area time series for each point
+#' @param dates Array containing the dates of each burned area observation
+#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
+#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
+#' @param biome Number between 1 and 13 representing a biome
+#' @param cluster Number of the cluster whose burned area time series are we going to obtain
+#' @param pvalue Threshold for considering significant each correlation
+#' @param t persistence index. Default to 0
+#' @return list containing the tree previously calculated and the results of the validation of the model
+tree.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0){
+    # Obtaining the time series
+    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t)
+    df = data$df        
+    
+    # Training the random forest model
+    ctrl <- trainControl(method = "LOOCV")# Leave-one-out CV
+    tunegrid <- expand.grid(cp = 1)
+    
+    set.seed(23)
+    # Training the model
+    model.def <- train(ba~.,
+       data = df,
+       method = 'rpart',
+       tuneGrid = tunegrid,
+       trControl = ctrl)
+       #preProcess = c("center","scale"))
+    
+    # Validating the model
+    results = model.validation(model.def$pred$obs, model.def$pred$pred)
+    
+    return (list(mod = model.def, results = results))
+}
+
+
+
+#' @title Regression tree models obtention and validation for all the clusters
+#' @description Obtaining the regresion tree models and evaluating the results
+#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
+#' @param ba.series Dataframe containing the monthly burned area time series for each point
+#' @param dates Array containing the dates of each burned area observation
+#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
+#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
+#' @param mode Type of fire season whose correlation are we going to calculate. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons)
+#' @param pvalue Threshold for considering significant each correlation
+#' @param t persistence index. Default to 0
+#' @return list containing the tree models previously calculated and the results of the validation of each model
+tree.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', pvalue = 0.05, t = 0){
+    
+    if (mode == 'unimodal'){
+        form = 1
+    } else if (mode == 'bimodal1'){
+        form = 2
+    } else if (mode == 'bimodal2'){
+        form = 2
+        fireSeasons[which(fireSeasons$form == form),]$start.1 = fireSeasons[which(fireSeasons$form == form),]$start.2
+        fireSeasons[which(fireSeasons$form == form),]$end.1 = fireSeasons[which(fireSeasons$form == form),]$end.2
+    }
+    
+    tree = list()# To store the models
+    results = data.frame(biome = 0, cluster = 0, tree.RMSE = 0, tree.bias = 0, tree.RVar = 0, tree.cor.pvalue = 0, tree.cor = 0, tree.acc = 0, tree.acc.t1 = 0, tree.acc.t2 = 0, tree.acc.t3 = 0)# To store the quality
+    
+    for (biome in 1:13){
+        tree.biome = list()
+        clusters = sort(unique(fireSeasons[which(fireSeasons$BIOME == biome),]$cl))
+        for (cl in 1:length(clusters)){
+                
+            cluster = clusters[cl]         
+            ind.coords = which(fireSeasons$BIOME == biome & fireSeasons$cl == cluster)
+            
+            # If the cluster has a different form, we move to the next cluster
+            if (fireSeasons[ind.coords,]$form[1] != form){
+                tree.biome[[cl]] = NA
+                add = c(biome, cl, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+                results = rbind(results, add)
+                next
+            }
+            
+            r = tree.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t)
+            
+            tree.biome[[cl]] <- r$mod
+
+            # Obtaining the quality
+            add = r$results
+            add = c(biome, cl, add)
+            
+            results = rbind(results, add)
+                                    
+        }
+        tree[[biome]] = tree.biome
+    }
+    return (list(tree = tree, results = results[-1,]))
 }
