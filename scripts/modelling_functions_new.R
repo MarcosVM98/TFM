@@ -210,10 +210,8 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
 model.validation <- function(obs, pred, as.df = F){
     
     rss = sum((pred - obs) ^ 2)  ## residual sum of squares
-    #tss = sum((obs - mean(obs)) ^ 2)  ## total sum of squares
-    #R2 = 1 - rss/tss
     RMSE = abs(100*sqrt(rss/length(pred)) / mean(obs))
-    bias = abs(100 * (mean(pred) / mean(obs)) / mean(obs))
+    bias = 100 * (mean(pred) / mean(obs)) / mean(obs)
     cor = cor.test(obs, pred, method = 'pearson')
     RVar = var(pred) / var(obs)
     
@@ -705,18 +703,22 @@ tree.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, bi
     
     # Initial tree
     i0 = 1
+    t0 = -1
+    j0 = -1
     tree.old <- tree(ba ~ ., data = df[-i0,])
     
     # Finding the best values for the parameters
     for (i in 1:length(df[,1])){# leave one out
         df0 = df[-i,]
-        for (j in c(1,3,5,7)){# minsize parameter
-            for (t in c(0.01, 0.05, 0.075, 0.5)){# mindev parameter
+        for (j in c(2,3,5,7)){# minsize parameter
+            for (t in c(0.01, 0.05, 0.075, 0.25, 0.5)){# mindev parameter
                 control.pars <- tree.control(nobs = nrow(df0), mindev = t, minsize = j)
                 tree.new <- tree(ba ~ ., data = df0, control = control.pars)
                 if ((predict(tree.new, newdata = df[i,])- df[i,1])^2 < (predict(tree.old, newdata = df[i0,])- df[i0,1])^2){
                     tree.old <- tree.new
                     i0 = i
+                    j0 = j
+                    t0 = t
                 }
             }
         }
@@ -727,6 +729,7 @@ tree.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, bi
     results = model.validation(df[,1], predict(tree.old, df[,-1]), as.df = T)
     
     print(results)
+    cat('Minsize =', j0, 'Mindev =', t0)
     
     return (list('tree'=tree.old, 'df'=df))
 }
