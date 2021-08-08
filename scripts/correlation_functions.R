@@ -160,31 +160,23 @@ corr.annual.clus <- function(ba.series, fireSeasons, coords, dates, cpc, name, c
         for (cl in 1:n.clusters){
             clus = clusters[cl]         
             ind.coords = which(fireSeasons$form == form & fireSeasons$BIOME == biome & fireSeasons$cl == clus)
-            if (fireSeasons[ind.coords,]$start.1[1] == fireSeasons[ind.coords,]$end.1[1]){
-                meses = fireSeasons[ind.coords,]$start.1[1]
-                ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
-                
-                if (meses > 4){
-                    ind.meses = ind.meses[-length(meses)]
-                }           
-
-            } else if (fireSeasons[ind.coords,]$start.1[1] < fireSeasons[ind.coords,]$end.1[1]){
+            
+            if (fireSeasons[ind.coords,]$start.1[1] <= fireSeasons[ind.coords,]$end.1[1]){
                 meses = seq(fireSeasons[ind.coords,]$start.1[1], fireSeasons[ind.coords,]$end.1[1])
                 ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
-                    
-                ind.meses = ind.meses[1:(length(meses) * floor(length(ind.meses)/length(meses)))]
 
             } else {
-                meses = c(seq(1, fireSeasons[ind.coords,]$end.1[1]), seq(fireSeasons[ind.coords,]$start.1[1], 12))
-                
+                meses = c(seq(1, fireSeasons[ind.coords,]$end.1[1]), seq(fireSeasons[ind.coords,]$start.1[1], 12))                
                 ind.meses = which(as.numeric(substr(dates, 6, 7)) %in% meses)
                 
-                if (fireSeasons[ind.coords,]$end.1[1] <= 4){
+                if (fireSeasons[ind.coords,]$end.1[1] <= 4){# because the last month with burned area data is April
                     ind.meses = ind.meses[(fireSeasons[ind.coords,]$end.1[1]+1):(length(ind.meses))]
                 } else {
                     ind.meses = ind.meses[(fireSeasons[ind.coords,]$end.1[1]+1):(length(ind.meses)-4-(13-fireSeasons[ind.coords,]$start.1[1]))]
                 }
             }
+            
+            ind.meses = ind.meses[1:(length(meses) * floor(length(ind.meses)/length(meses)))]
                 
             m = ba.series[ind.meses, ind.coords]                
 
