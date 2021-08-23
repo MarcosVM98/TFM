@@ -125,10 +125,11 @@ get.cpc.serie <- function(fireSeasons, dates, ind.coords, list.cpcs, meses, ind.
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different data frame
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return list containing in the element 'df' a dataframe whose first column will be the burned area time serie and the other ones will be the climate indexes time series. The second element is a vector containing the climate indexes with significant correlation
-clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F){
+clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F, min.t = 0){
     
     # Positions of the cluster data points in the dataframes
     ind.coords = which(fireSeasons$BIOME == biome & fireSeasons$cl == cluster)
@@ -162,7 +163,7 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
     df = data.frame('ba' = ba.serie)
 
     cpcs.all = c()
-    j = 0
+    j = min.t
     size = dim(corr.df)[2] - 2
     if (size == 2*length(list.cpcs)){# if corr.df contains data of only one value of t
         # Indexes with significant correlation with this cluster
@@ -177,10 +178,11 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
         cpcs.all = cpcs
         
     } else {
-        while (j <= t){# One iteration per value between 0 and the persistence t        
+        k = 0
+        while (j <= t){# One iteration per value between min.t and the persistence t        
             # Indexes with significant correlation with this cluster
             cpcs = c()
-            for (i in (j*length(list.cpcs)+1):((j+1)*length(list.cpcs))){
+            for (i in (k*length(list.cpcs)+1):((k+1)*length(list.cpcs))){
                 if (!is.na(corr.df[ind.coords, 2*i+2][1]) && corr.df[ind.coords, 2*i+2][1] < pvalue){
                     cpcs = c(cpcs, i)
                 }
@@ -190,6 +192,7 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
 
             cpcs.all = c(cpcs.all, cpcs)
             j = j + 1
+            k = k + 1
         }
     }
     
@@ -201,7 +204,7 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
             colnames(df) = c('ba', names(list.cpcs))
         } else {
             names = c('ba')
-            for (i in 0:t){
+            for (i in min.t:t){
                 for (j in 1:length(list.cpcs)){
                     names = c(names, paste(names(list.cpcs)[j], '.', toString(i), sep = ''))
                 }
@@ -220,10 +223,10 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
 
 #' @title Model's validation
 #' @description Obtains the value of some metrics for the results obtained by a model
-#' @param obs Vector with real values
-#' @param pred Vector with predicted values
-#' @param
-#' @returns dataframe containing the value of the RMSE, bias, correlation, variance ratio, total accuracy and tercile accuracy
+#' @param obs Vector of real values
+#' @param pred Vector of predicted values
+#' @param as.df Decide whether the results are a vector or a data frame. Default to FALSE
+#' @return dataframe or vector containing the value of the RMSE, bias, correlation, variance ratio, total accuracy and tercile accuracy
 model.validation <- function(obs, pred, as.df = F){
     
     rss = sum((pred - obs) ^ 2)  ## residual sum of squares
@@ -274,12 +277,13 @@ model.validation <- function(obs, pred, as.df = F){
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return the linear model previously calculated
-lm.clus.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F){
+lm.clus.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F, min.t = 0){
     # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas)
+    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas, min.t)
     df = data$df
     cpcs = data$cpcs
     
@@ -296,6 +300,7 @@ lm.clus.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
     # Observed vs predicted plot
     plot(mod$pred$obs, col = 'green', main = 'Observed vs predicted', ylab = 'Burned area', type = 'l')
     lines(mod$pred$pred, col = 'red')
+    # legend##################
     
     # Climate time series plots
     #for (i in 1:length(cpcs)){
@@ -311,7 +316,7 @@ lm.clus.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
     #}
     
     # Printing the validation results
-    print(results)
+    # print(results)
     
     return (mod)
 }
@@ -327,12 +332,13 @@ lm.clus.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return list containing the linear model previously calculated, the results of the validation of the model and a index indicating how many correlated indexes with this cluster are (ind = -1 is there are not)
-lm.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F){
+lm.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F, min.t = 0){
     # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas)
+    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas, min.t)
     df = data$df
     cpcs = data$cpcs
     
@@ -363,10 +369,11 @@ lm.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
 #' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param mode Type of fire season whose correlation are we going to calculate. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons)
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return list containing the linear models previously calculated and the results of the validation of each model
-lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', pvalue = 0.05, t = 0, useDeltas = F){
+lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', pvalue = 0.05, t = 0, useDeltas = F, min.t = 0){
     
     if (mode == 'unimodal'){
         form = 1
@@ -397,7 +404,8 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
                 next
             }
             
-            r = lm.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas)
+            # Obtains the linear model
+            r = lm.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas, min.t)
             
             if (r$ind == -1){
                 lm.biome[[cl]] = NA
@@ -431,8 +439,9 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return list containing the random forest model previously calculated, the results of the validation of the model and a index indicating how many trees are in the model
 rf.obtention.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t = 0, useDeltas = F){
     # Obtaining the time series
@@ -492,12 +501,13 @@ rf.obtention.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs,
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return list containing the random forest model previously calculated, the results of the validation of the model and a index indicating how many trees are in the model
-rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t = 0, useDeltas = F){
+rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t = 0, useDeltas = F, min.t = 0){
     # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas)
+    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas, min.t)
     df = data$df        
     
     # Hold-out CV to find the best value of k
@@ -600,10 +610,11 @@ rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
 #' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param mode Type of fire season whose correlation are we going to calculate. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons)
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
 #' @return list containing the random forests models previously calculated and the results of the validation of each model
-rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', t = 0, useDeltas = F){
+rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', t = 0, useDeltas = F, min.t = 0){
     
     if (mode == 'unimodal'){
         form = 1
@@ -634,7 +645,8 @@ rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
                 next
             }
             
-            r = rf.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas)
+            # Obtains the random forest model
+            r = rf.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas, min.t)
             
             rf.biome[[cl]] <- r$mod
 
@@ -663,12 +675,14 @@ rf.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
+#' @param max.k Maximum value of the k parameter
 #' @return list containing the knn model previously calculated and the results of the validation of the model
-knn.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t = 0, useDeltas = F, max.k = 5){
+knn.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t = 0, useDeltas = F, max.k = 5, min.t = 0){
     # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas)
+    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas, min.t)
     df = data$df
     
     # Hold-out CV to find the best value of k
@@ -726,10 +740,12 @@ knn.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, bio
 #' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param mode Type of fire season whose correlation are we going to calculate. It could be 'unimodal' (by default), 'bimodal1' (main fire season of bimodal fire seasons) or 'bimodal2' (secondary fire season of bimodal fire seasons)
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
+#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
+#' @param max.k Maximum value of the k parameter
 #' @return list containing the knn models previously calculated and the results of the validation of each model
-knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', t = 0, useDeltas = F, max.k = 5){
+knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'unimodal', t = 0, useDeltas = F, max.k = 5, min.t = 0){
     
     if (mode == 'unimodal'){
         form = 1
@@ -760,7 +776,7 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
                 next
             }
             
-            r = knn.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas, max.k)
+            r = knn.obtention(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas, max.k, min.t)
             
             knn.biome[[cl]] <- r$mod
 
@@ -789,7 +805,7 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
 #' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
 #' @param biome Number between 1 and 13 representing a biome
 #' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation
+#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
 #' @param t persistence index. Default to 0
 #' @return list containing the tree previously calculated and the dataframe used for obtaining and validating the model
 tree.obtention.2 <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0){
