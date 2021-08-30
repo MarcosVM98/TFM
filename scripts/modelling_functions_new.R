@@ -526,7 +526,7 @@ rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
     pred = predict(model.best, newdata = df.test)
     corr.best = cor.test(df.test[,1], pred, method = 'pearson')$estimate
     
-    for (i in 2:length(list.cpcs)){
+    for (i in 2:min(dim(corr.df)[2]/2 - 1, 15)){
         tunegrid <- expand.grid(.mtry = i)
         model <- train(ba~., data = df.train, method = 'rf', tuneGrid = tunegrid, trControl = ctrl)
         pred = predict(model, newdata = df.test)
