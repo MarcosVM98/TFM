@@ -7,6 +7,7 @@ require(sp)
 require(magrittr)
 require(RColorBrewer)
 
+# Color palette for the plots
 #group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))
 group.colors <- brewer.pal(11, 'Spectral')
 
@@ -216,6 +217,7 @@ corr.annual.clus <- function(ba.series, fireSeasons, coords, dates, cpc, name, c
     arg.list[["xlim"]] <- c(-180,180)
     do.call("spplot", arg.list) %>% print()
 
+    # Change the column names of the dataframe
     if (mode == 'bimodal2'){
         colnames(corr.df)[colnames(corr.df) == 'ind.cpc'] = paste(name, '.2', sep = '')
         colnames(corr.df)[colnames(corr.df) == 'ind.cpc.pvalue'] = paste(name, '.2.pvalue', sep = '')

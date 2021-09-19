@@ -1,17 +1,20 @@
+## Functions used for defining and analyzing the clusters and also for calculating its fire seasons
+
+# Required packages
 library("mclust")
 require(sp)
 require(magrittr)
 library(dplyr)
 require(RColorBrewer)
 
+# Data loading
 load("scripts/worldmap.Rdata", verbose = T)
-load("data/ba_mon_clim_masked_df.Rdata", verbose = T)
-load("data/biome_dataframe_masked.Rdata", verbose = T)
-
-group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))
+load("data/Fire/ba_mon_clim_masked_df.Rdata", verbose = T)
+load("data/Fire/biome_dataframe_masked.Rdata", verbose = T)
 
 
-## Functions used for defining and analyzing the clusters and also for calculating its fire seasons
+group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent")))#a color palette for the plots
+
 
 #' @title Best GMM model selection
 #' @description Retain the highest BIC model after an arbitary number of GMM initializations
@@ -20,7 +23,6 @@ group.colors <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(8, "Accent
 #' @param n.inits Number of initializations. Default to 3
 #' @return A list of mclust-class models and the index of the list of the model with the highest BIC
 #' @importFrom mclust Mclust
-
 selectBestGMM <- function(data, K, n.inits = 3) {
     i <- 1
     gmm.list <- rep(list(bquote(), n.inits))
@@ -51,7 +53,6 @@ selectBestGMM <- function(data, K, n.inits = 3) {
 #' @param clus A mclust-class model
 #' @param naind Vector containing the indexes where there are NAs values in df
 #' @return Data of the plot
-
 plotClust.gmm <- function(df, coords, clus, naind = c(), ...) {
     arg.list <- list(col.regions = group.colors(clus$G),
                       at = seq(0, clus$G, 1), main = paste(toString(clus$G), "clusters"))
@@ -82,17 +83,15 @@ plotClust.gmm <- function(df, coords, clus, naind = c(), ...) {
 #' @param df Data frame containing the burned area data without NAs
 #' @param clus A mclust-class model
 #' @param par A two-dimentional vector containing the dimensions of the grid
-
 plotCentroids.gmm <- function(df, clus, par) {
 
     par(mfrow = par)
 
     for (i in 1:clus$G){
-        #centroide = colMeans(df[which(clus$classification == i),])
-        centroide = apply(df[which(clus$classification == i),], 2, median)
-
+        med = apply(df[which(clus$classification == i),], 2, median)
         per.25 = vector("numeric", length = 12)
         per.75 = vector("numeric", length = 12)
+        
         for (j in 1:12){
             per.25[j] = quantile(df[which(clus$classification == i),j], prob=0.25)
             per.75[j] = quantile(df[which(clus$classification == i),j], prob=0.75)
@@ -100,22 +99,20 @@ plotCentroids.gmm <- function(df, clus, par) {
 
         plot(per.75, col = 'blue', type = 'l', xlab = "Month", ylab = "Burned Area",
             main = paste('Cluster', toString(i)), sub = paste('Size', toString(sum(clus$classification == i))))
-        lines(1:12, centroide, col = "red")
+        lines(1:12, med, col = "red")
         lines(1:12, per.25, col = "green")
     }
 }
 
 
 #' @title Fire season calculation
-#' @description Calculates the fire season of each of the clusters of the mclust model
+#' @description Calculates the fire season of each of the clusters of the mclust model using the 75th percentile and the 80% of burned area as the threshold
 #' @param df Data frame containing the no Nas burned area data
 #' @param clus A mclust-class model
 #' @return List containing the fire season of each of the clusters
-
 fireSeason = function(df, clus){
     fire.season = list()
     for (i in 1:clus$G){
-        #centroide = colMeans(df[which(clus$classification == i),])
         centroide = apply(df[which(clus$classification == i),], 2, quantile, prob = 0.75)
         anual = as.data.frame(centroide)
         anual$mes = 1:12#if January is the first month
@@ -136,19 +133,17 @@ fireSeason = function(df, clus){
 }
 
 
-## Function for performing the clustering and calculating the fire seasons. It uses the four previous functions and the data stored in "biome_dataframe.Rdata" and in "ba_dataframe.Rdata"
 
-
-
+# Data is log-tranformed
 df.log = log1p(df_masked)
 
 
+
 #' @title Fire season calculation of each of the clusters of the biome
-#' @description Performs the clustering of the points with the biome, plots the spatial location and the centroid for each cluster and calculates the fire season of each cluster
+#' @description Performs the clustering of the points of the biome, plots the spatial location and the centroid for each cluster and calculates the fire season of each cluster
 #' @param biome Number between 1 and 13. Each number corresponds to one particular biome as you can see in the dataframe legend.biomes
 #' @param min.size Minimum size of each the clusters in percentage of the whole numbers of points of the biome
 #' @return List containing the fire season of each of the clusters and the mclust clustering model used for calculating the fire seasons
-
 biome.clustering <- function (biome, min.size = 5){
     # Select the appropiate subset of the data
     ind.coords.biome = which(biomes$BIOME == biome)
@@ -253,7 +248,6 @@ biome.clustering <- function (biome, min.size = 5){
 #' @description Builds a data frame with the fire season information. For each point the data frame contains its coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season
 #' @param fireSeasonsComplete List containing the elements that are returned by biome.clustering function
 #' @return A data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
-
 fireSeasonsDfConstruction <- function (fireSeasonsComplete){
     # Store the fire season of each pixel in the dataframe "fireSeasonMedian_def"
     cl = rep(NA ,length(biomes$x))# cluster of the pixel
@@ -374,4 +368,3 @@ fireSeasonsDfConstruction <- function (fireSeasonsComplete){
     }
     return (fireSeasonMedian_def)
 }
-

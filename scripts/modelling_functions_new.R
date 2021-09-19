@@ -198,7 +198,7 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
     
     if (is.null(names(list.cpcs))){
         size = dim(df)[2] - 1
-        colnames(df) = c('ba', 1:size)# con esto funcionaba
+        colnames(df) = c('ba', 1:size)
     } else {
         if (t == 0 | size == 2*length(list.cpcs)){
             colnames(df) = c('ba', names(list.cpcs))
@@ -230,8 +230,8 @@ clus.data.preparation <- function(fireSeasons, ba.series, dates, corr.df, list.c
 model.validation <- function(obs, pred, as.df = F){
     
     rss = sum((pred - obs) ^ 2)  ## residual sum of squares
-    RMSE = abs(100*sqrt(rss/length(pred)) / mean(obs))
-    bias = 100 * (mean(pred) / mean(obs)) / mean(obs)
+    RMSE = 100 * sqrt(rss/length(pred)) / sd(obs)############################
+    bias = 100*(mean(pred) - mean(obs)) / sd(obs)
     cor = cor.test(obs, pred, method = 'pearson')
     RVar = var(pred) / var(obs)
     
@@ -263,62 +263,6 @@ model.validation <- function(obs, pred, as.df = F){
     }
     
     return (results)    
-}
-
-
-
-
-#' @title Linear model obtention and validation
-#' @description Obtaining the linear model and evaluating the results. It also plots the real and the predicted values of the burned area, the burned area versus the climate index with significant correlation if there is only one and climate index time serie
-#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
-#' @param ba.series Dataframe containing the monthly burned area time series for each point
-#' @param dates Array containing the dates of each burned area observation
-#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
-#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
-#' @param biome Number between 1 and 13 representing a biome
-#' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
-#' @param t persistence index. Default to 0
-#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
-#' @return the linear model previously calculated
-lm.clus.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0, useDeltas = F, min.t = 0){
-    # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t, useDeltas, min.t)
-    df = data$df
-    cpcs = data$cpcs
-    
-    # Training the linear model
-    ctrl <- trainControl(method = "LOOCV")# Leave-one-out CV
-    mod <- train(ba ~ ., data = df[,c(1, c(cpcs + 1))], method = "lm", trControl = ctrl)
-    
-    # Validating the model
-    results = model.validation(mod$pred$obs, mod$pred$pred, as.df = T)
-    
-    # Doing the plots
-    par(mfrow=c(2,2))
-    
-    # Observed vs predicted plot
-    plot(mod$pred$obs, col = 'green', main = 'Observed vs predicted', ylab = 'Burned area', type = 'l')
-    lines(mod$pred$pred, col = 'red')
-    # legend##################
-    
-    # Climate time series plots
-    #for (i in 1:length(cpcs)){
-    #    plot(df[,cpcs[i]+1], main = paste('Climate index', toString(cpcs[i])))
-    #}
-    
-    # Climate index vs burned area
-    #if (length(cpcs) == 1){
-    #    ind.coords = which(fireSeasons$BIOME == biome & fireSeasons$cl == cluster)
-    #    plot(df[,cpcs[i]+1], df$ba, main = paste('Climate index vs ba with corr = ', 
-    #                                      toString(round(corr.df[ind.coords, 2*cpcs + 1][1], digits = 3))), 
-    #         ylab = 'Burned area')
-    #}
-    
-    # Printing the validation results
-    # print(results)
-    
-    return (mod)
 }
 
 
@@ -430,67 +374,6 @@ lm.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'un
 
 
 
-#' @title Random forest model obtention and validation for a particular cluster
-#' @description Obtaining the random forest model and evaluating the results
-#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
-#' @param ba.series Dataframe containing the monthly burned area time series for each point
-#' @param dates Array containing the dates of each burned area observation
-#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
-#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
-#' @param biome Number between 1 and 13 representing a biome
-#' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
-#' @param t persistence index. Default to 0
-#' @param useDeltas Decide if the time series are deltas (return[i] = data[i] - data[i-1]) or not (return[i] = data[i]). Default to FALSE
-#' @return list containing the random forest model previously calculated, the results of the validation of the model and a index indicating how many trees are in the model
-rf.obtention.plot <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t = 0, useDeltas = F){
-    # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, t, useDeltas)
-    df = data$df        
-    
-    
-    # Training the random forest model
-    ctrl <- trainControl(method = "LOOCV")# Leave-one-out CV
-    tunegrid <- expand.grid(.mtry=ceiling(length(list.cpcs)/3))# Grid for optimizing the number of predictors
-    set.seed(23)
-    
-    # Training the first model
-    ntree.def = 10
-    model.def <- train(ba~.,
-       data = df,
-       method = 'rf',
-       tuneGrid = tunegrid,
-       trControl = ctrl,
-       ntree = 10)
-    
-    results = cbind(data.frame(ntree = 10), model.validation(model.def$pred$obs, model.def$pred$pred, as.df = T))
-
-    # Training new models with different ntree parameters and storing the best one
-    for (ntree in seq(25, 200, 25)){
-
-        fit <- train(ba~.,
-                   data = df,
-                   method = 'rf',
-                   tuneGrid = tunegrid,
-                   trControl = ctrl,
-                   ntree = ntree)
-        
-        add = cbind(data.frame(ntree = ntree), model.validation(fit$pred$obs, fit$pred$pred, as.df = T))                    
-        results = rbind(results, add)
-    }
-    
-    par(mfrow=c(2,2))
-    plot(results$ntree, results$RMSE, main = 'RMSE')
-    #plot(results$ntree, results$bias, main = 'bias')
-    plot(results$ntree, results$RVar, main = 'RVar')
-    plot(results$ntree, results$cor.pvalue, main = 'cor p-value')
-    plot(results$ntree, results$acc, main = 'acc')
-    
-    return (results)
-}
-
-
-
 
 #' @title Random forest model obtention and validation for a particular cluster
 #' @description Obtaining the random forest model and evaluating the results
@@ -531,7 +414,7 @@ rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
         model <- train(ba~., data = df.train, method = 'rf', tuneGrid = tunegrid, trControl = ctrl)
         pred = predict(model, newdata = df.test)
         corr = cor.test(df.test[,1], pred, method = 'pearson')$estimate
-        if (abs(corr) > abs(corr.best)){
+        if (corr > corr.best){
             mtry.best = i
             corr.best = corr
             model.best = model
@@ -552,7 +435,7 @@ rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
         model <- train(ba~., data = df.train, method = 'rf', tuneGrid = tunegrid, trControl = ctrl, ntree = i)
         pred = predict(model, newdata = df.test)
         corr = cor.test(df.test[,1], pred, method = 'pearson')$estimate
-        if (abs(corr) > abs(corr.best)){
+        if (corr > corr.best){
             ntree.best = i
             corr.best = corr
             model.best = model
@@ -573,7 +456,7 @@ rf.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biom
         model <- train(ba~., data = df.train, method = 'rf', tuneGrid = tunegrid, trControl = ctrl, ntree = ntree.best, maxnodes = i)
         pred = predict(model, newdata = df.test)
         corr = cor.test(df.test[,1], pred, method = 'pearson')$estimate
-        if (abs(corr) > abs(corr.best)){
+        if (corr > corr.best){
             maxnodes.best = i
             corr.best = corr
             model.best = model
@@ -705,7 +588,7 @@ knn.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, bio
         model <- train(ba~., data = df.train, method = 'knn', tuneGrid = tunegrid, trControl = ctrl, preProcess = c("center","scale"))
         pred = predict(model, newdata = df.test)
         corr = cor.test(df.test[,1], pred, method = 'pearson')$estimate
-        if (abs(corr) > abs(corr.best)){
+        if (corr > corr.best){
             k.best = i
             corr.best = corr
             model.best = model
@@ -729,6 +612,7 @@ knn.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, bio
     
     return (list(mod = model.def, results = results, k = k.best))
 }
+
 
 
 
@@ -790,88 +674,4 @@ knn.all <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, mode = 'u
         knn[[biome]] = knn.biome
     }
     return (list(knn = knn, results = results[-1,]))
-}
-
-
-
-
-
-#' @title Regression tree model obtention and validation for a particular cluster
-#' @description Obtaining the regression tree model and evaluating the results. 
-#' @param fireSeasons Data frame containing coordinates, biome, cluster, start and end months of the fire season, start and end months of the secondary fire season if exists and form of the fire season for each pixel
-#' @param ba.series Dataframe containing the monthly burned area time series for each point
-#' @param dates Array containing the dates of each burned area observation
-#' @param corr.df Dataframe with the same form as masked_coords containing the correlation between each cluster and each climate index
-#' @param list.cpcs List containing the values of the climate indexes in the period that we are studying. Data of each index must be in a different dataframe
-#' @param biome Number between 1 and 13 representing a biome
-#' @param cluster Number of the cluster whose burned area time series are we going to obtain
-#' @param pvalue Threshold for considering significant each correlation. Default to 0.05
-#' @param t persistence index. Default to 0
-#' @return list containing the tree previously calculated and the dataframe used for obtaining and validating the model
-tree.obtention.2 <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0){
-    # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t)
-    df = data$df        
-    
-    set.seed(23)
-    
-    # Initial tree
-    i0 = 1
-    t0 = -1
-    j0 = -1
-    tree.old <- tree(ba ~ ., data = df[-i0,])
-    
-    # Finding the best values for the parameters
-    for (i in 1:length(df[,1])){# leave one out
-        df0 = df[-i,]
-        for (j in c(2,3,5,7)){# minsize parameter
-            for (t in c(0.01, 0.05, 0.075, 0.25, 0.5)){# mindev parameter
-                control.pars <- tree.control(nobs = nrow(df0), mindev = t, minsize = j)
-                tree.new <- tree(ba ~ ., data = df0, control = control.pars)
-                if ((predict(tree.new, newdata = df[i,])- df[i,1])^2 < (predict(tree.old, newdata = df[i0,])- df[i0,1])^2){
-                    tree.old <- tree.new
-                    i0 = i
-                    j0 = j
-                    t0 = t
-                }
-            }
-        }
-    }
-    plot(tree.old)
-    text(tree.old)
-    
-    results = model.validation(df[,1], predict(tree.old, df[,-1]), as.df = T)
-    
-    print(results)
-    cat('Minsize =', j0, 'Mindev =', t0)
-    
-    return (list('tree'=tree.old, 'df'=df))
-}
-
-
-
-
-
-
-tree.obtention <- function(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue = 0.05, t = 0){
-    # Obtaining the time series
-    data = clus.data.preparation(fireSeasons, ba.series, dates, corr.df, list.cpcs, biome, cluster, pvalue, t)
-    df = data$df        
-    
-    set.seed(23)
-    
-    indTrain <- sample(1:nrow(df), nrow(df)/2) 
-    indTest = setdiff(1:nrow(df), indTrain)
-    # Initial tree
-    t.full <- tree(ba ~. , df, subset = indTrain,
-               split = "deviance", 
-               control = tree.control(length(indTrain), 
-                                      mincut = 1, minsize = 2, 
-                                      mindev = 0))
-    plot(t.full)
-    text(t.full)
-    
-    
-    
-    return (list('df'=df, 'tree'=t.full))
 }
