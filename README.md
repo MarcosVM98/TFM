@@ -1,5 +1,5 @@
 # TFM
-This repository contains the contents related to the project of my TFM called "Automated wildfire season detection at a global scale:  Application for the development of a predictive system of fireactivity.". This repository allows full reproducibility of the results we obtained in our project.
+This repository contains the contents related to the project of my TFM called "Automated wildfire season detection at a global scale:  Application for the development of a predictive system of fireactivity.". This repository allows full reproducibility of the results we obtained in our project as all the stochastic procedures have a fixed random seed.
 
 It contains the following directories:
 
